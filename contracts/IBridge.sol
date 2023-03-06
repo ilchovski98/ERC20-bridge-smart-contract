@@ -7,27 +7,29 @@ interface IBridge {
     uint256 originChainId;
   }
 
+  struct User {
+    address _address;
+    uint256 chainId;
+  }
+
   struct DepositData {
-    address tokenOwner;
+    User from;
+    User to;
     address spender;
     address token;
     uint256 amount;
     uint256 deadline;
-    address recepientOnDestinationChain;
-    uint256 destinationChainId;
     Signature approveTokenTransferSig;
   }
 
   struct ClaimData {
-    address tokenOwner;
-    address recepient;
+    User from;
+    User to;
+    uint256 amount;
     address originalToken;
     address targetTokenAddress;
     string originalTokenName;
     string originalTokenSymbol;
-    uint256 amount;
-    uint256 sourceChainId;
-    uint256 destinationChainId;
     uint256 deadline;
     Signature approveTokenTransferSig;
   }

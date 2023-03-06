@@ -49,13 +49,13 @@ contract Bridge is Ownable, Pausable, IBridge {
   }
 
   function deposit(DepositData calldata _depositData) external whenNotPaused {
-    if (_depositData.recepientOnDestinationChain == address(0)) revert InvalidAddress();
+    if (_depositData.to._address == address(0)) revert InvalidAddress();
     if (_depositData.token == address(0)) revert InvalidAddress();
 
     // Todo make deposit work with erc20 tokens that do not implement permits
     PermitERC20 originalToken = PermitERC20(_depositData.token);
     originalToken.permit(
-      _depositData.tokenOwner,
+      _depositData.from._address,
       _depositData.spender,
       _depositData.amount,
       _depositData.deadline,
@@ -63,13 +63,13 @@ contract Bridge is Ownable, Pausable, IBridge {
       _depositData.approveTokenTransferSig.r,
       _depositData.approveTokenTransferSig.s
     );
-    originalToken.transferFrom(_depositData.tokenOwner, _depositData.spender, _depositData.amount);
+    originalToken.transferFrom(_depositData.from._address, _depositData.spender, _depositData.amount);
 
     OriginalToken memory originalTokenData = originalTokenByWrappedToken[_depositData.token];
     bool isWrappedToken = originalTokenData.tokenAddress != address(0);
 
     if (isWrappedToken) {
-      if (originalTokenData.originChainId != _depositData.destinationChainId) revert IncorrectDestinationChain();
+      if (originalTokenData.originChainId != _depositData.to.chainId) revert IncorrectDestinationChain();
       WrappedERC20(_depositData.token).burn(_depositData.amount);
       emitBurnWrappedToken(_depositData, originalTokenData.tokenAddress);
     } else {
@@ -88,7 +88,7 @@ contract Bridge is Ownable, Pausable, IBridge {
         keccak256(abi.encode(
           CLAIM_TYPEHASH,
           _claimData,
-          nonces[_claimData.tokenOwner]++
+          nonces[_claimData.from._address]++
         ))
       )
     );
@@ -100,37 +100,37 @@ contract Bridge is Ownable, Pausable, IBridge {
       "BridgeClaim: INVALID_SIGNATURE"
     );
 
-    if (_claimData.destinationChainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
-    if (_claimData.tokenOwner == address(0)) revert InvalidAddress();
-    if (_claimData.recepient == address(0)) revert InvalidAddress();
+    if (_claimData.to.chainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
+    if (_claimData.from._address == address(0)) revert InvalidAddress();
+    if (_claimData.to._address == address(0)) revert InvalidAddress();
 
     if (_claimData.targetTokenAddress == address(0)) {
 
-      if (wrappedTokenByOriginalTokenByChainId[_claimData.sourceChainId][_claimData.originalToken] == address(0)) {
+      if (wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] == address(0)) {
         WrappedERC20 newWrappedToken = WrappedERC20Factory(wrappedERC20Factory).createToken(
           string.concat("Wrapped ", _claimData.originalTokenName),
           string.concat("W", _claimData.originalTokenSymbol)
         );
 
-        wrappedTokenByOriginalTokenByChainId[_claimData.sourceChainId][_claimData.originalToken] = address(newWrappedToken);
-        originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(_claimData.originalToken, _claimData.sourceChainId);
+        wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] = address(newWrappedToken);
+        originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(_claimData.originalToken, _claimData.from.chainId);
       }
 
-      WrappedERC20(wrappedTokenByOriginalTokenByChainId[_claimData.sourceChainId][_claimData.originalToken]).mint(_claimData.recepient, _claimData.amount);
+      WrappedERC20(wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken]).mint(_claimData.to._address, _claimData.amount);
 
-      emitMintWrappedToken(_claimData, wrappedTokenByOriginalTokenByChainId[_claimData.sourceChainId][_claimData.originalToken]);
+      emitMintWrappedToken(_claimData, wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken]);
     } else {
       PermitERC20 originalToken = PermitERC20(_claimData.targetTokenAddress);
       originalToken.permit(
-        _claimData.tokenOwner,
-        _claimData.recepient,
+        _claimData.from._address,
+        _claimData.to._address,
         _claimData.amount,
         _claimData.deadline,
         _claimData.approveTokenTransferSig.v,
         _claimData.approveTokenTransferSig.r,
         _claimData.approveTokenTransferSig.s
       );
-      originalToken.transferFrom(_claimData.tokenOwner, _claimData.recepient, _claimData.amount);
+      originalToken.transferFrom(_claimData.from._address, _claimData.to._address, _claimData.amount);
 
       emitReleaseOriginalToken(_claimData);
     }
@@ -140,10 +140,10 @@ contract Bridge is Ownable, Pausable, IBridge {
     emit ReleaseOriginalToken(
       _claimData.targetTokenAddress,
       _claimData.amount,
-      _claimData.tokenOwner,
-      _claimData.recepient,
-      _claimData.sourceChainId,
-      _claimData.destinationChainId,
+      _claimData.from._address,
+      _claimData.to._address,
+      _claimData.from.chainId,
+      _claimData.to.chainId,
       _claimData.originalToken
     );
   }
@@ -152,10 +152,10 @@ contract Bridge is Ownable, Pausable, IBridge {
     emit MintWrappedToken(
         correspondingWrappedToken,
         _claimData.amount,
-        _claimData.tokenOwner,
-        _claimData.recepient,
-        _claimData.sourceChainId,
-        _claimData.destinationChainId,
+        _claimData.from._address,
+        _claimData.to._address,
+        _claimData.from.chainId,
+        _claimData.to.chainId,
         _claimData.originalToken
     );
   }
@@ -164,10 +164,10 @@ contract Bridge is Ownable, Pausable, IBridge {
     emit BurnWrappedToken(
       _depositData.token,
       _depositData.amount,
-      _depositData.tokenOwner,
-      _depositData.recepientOnDestinationChain,
+      _depositData.from._address,
+      _depositData.to._address,
       block.chainid,
-      _depositData.destinationChainId,
+      _depositData.to.chainId,
       originalTokenAddress
     );
   }
@@ -176,10 +176,10 @@ contract Bridge is Ownable, Pausable, IBridge {
     emit LockOriginalToken(
       _depositData.token,
       _depositData.amount,
-      _depositData.tokenOwner,
-      _depositData.recepientOnDestinationChain,
+      _depositData.from._address,
+      _depositData.to._address,
       block.chainid,
-      _depositData.destinationChainId
+      _depositData.to.chainId
     );
   }
 }
