@@ -22,27 +22,38 @@ contract Bridge is Ownable, Pausable, IBridge {
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
 
-  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 amount,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)Person(address _address,uint256 chainId)Signature(uint8 v,bytes32 r,bytes32 s)")
-  bytes32 public constant CLAIM_TYPEHASH = 0x00db05574adaee8e4410631e0b2fb115ef1a9565ccd194aff1600d0119cab74a;
+  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)User(address _address,uint256 chainId)Signature(uint8 v,bytes32 r,bytes32 s)")
+  bytes32 public constant CLAIM_TYPEHASH = 0x5be4bf9e03a600be3a2aac784815dc05ef659fea3de5dd87f7ea5379f4d428b4;
 
-  // keccak256("ClaimData(User from,User to,uint256 amount,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)Person(address _address,uint256 chainId)Signature(uint8 v,bytes32 r,bytes32 s)")
-  bytes32 public constant CLAIMDATA_TYPEHASH = 0x9b2a22c17a57587cc64655cec9ee6e205b08465f2268defde6f1de8d3704272f;
+  // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)User(address _address,uint256 chainId)Signature(uint8 v,bytes32 r,bytes32 s)")
+  bytes32 public constant CLAIMDATA_TYPEHASH = 0x4e4f91c51d1ccdc1fcd8c7ba8ed0061258ef02096a4a52e912dc538f728fb661;
 
-  // keccak256("Person(address _address,uint256 chainId)")
-  bytes32 public constant USER_TYPEHASH = 0x33adf0bc7b80f88268e001c40fcb4143d3aff6e0cdc9794f8c56bbd1813b65ef;
+  // keccak256("User(address _address,uint256 chainId)")
+  bytes32 public constant USER_TYPEHASH = 0x265b4089f698d180c71c21e5c5a755d17cec5ca245cab57cf1f26696020008b6;
 
   // keccak256("Signature(uint8 v,bytes32 r,bytes32 s)")
   bytes32 public constant SIGNATURE_TYPEHASH = 0xcea59b5eccb60256d918b7a2e778f6161148c37e6dada57c32e20db10c50b631;
 
-  constructor() {
+  string private _name;
+
+  constructor(string memory contractName) {
     _pause();
+    _name = contractName;
     DOMAIN_SEPARATOR = keccak256(abi.encode(
       keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-      keccak256(bytes('Bridge')),
+      keccak256(bytes(contractName)),
       keccak256(bytes("1")),
       block.chainid,
       address(this)
     ));
+  }
+
+  function name() public view returns (string memory) {
+    return _name;
+  }
+
+  function nonce(address _owner) external view returns (uint256) {
+    return nonces[_owner];
   }
 
   function hash(Signature calldata sig) internal pure returns (bytes32) {
@@ -67,7 +78,7 @@ contract Bridge is Ownable, Pausable, IBridge {
       CLAIMDATA_TYPEHASH,
       hash(_claimData.from),
       hash(_claimData.to),
-      _claimData.amount,
+      _claimData.value,
       _claimData.originalToken,
       _claimData.targetTokenAddress,
       keccak256(bytes(_claimData.originalTokenName)),
@@ -99,20 +110,20 @@ contract Bridge is Ownable, Pausable, IBridge {
     originalToken.permit(
       _depositData.from._address,
       _depositData.spender,
-      _depositData.amount,
+      _depositData.value,
       _depositData.deadline,
       _depositData.approveTokenTransferSig.v,
       _depositData.approveTokenTransferSig.r,
       _depositData.approveTokenTransferSig.s
     );
-    originalToken.transferFrom(_depositData.from._address, _depositData.spender, _depositData.amount);
+    originalToken.transferFrom(_depositData.from._address, _depositData.spender, _depositData.value);
 
     OriginalToken memory originalTokenData = originalTokenByWrappedToken[_depositData.token];
     bool isWrappedToken = originalTokenData.tokenAddress != address(0);
 
     if (isWrappedToken) {
       if (originalTokenData.originChainId != _depositData.to.chainId) revert IncorrectDestinationChain();
-      WrappedERC20(_depositData.token).burn(_depositData.amount);
+      WrappedERC20(_depositData.token).burn(_depositData.value);
       emitBurnWrappedToken(_depositData, originalTokenData.tokenAddress);
     } else {
       emitLockOriginalToken(_depositData);
@@ -158,7 +169,7 @@ contract Bridge is Ownable, Pausable, IBridge {
         originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(_claimData.originalToken, _claimData.from.chainId);
       }
 
-      WrappedERC20(wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken]).mint(_claimData.to._address, _claimData.amount);
+      WrappedERC20(wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken]).mint(_claimData.to._address, _claimData.value);
 
       emitMintWrappedToken(_claimData, wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken]);
     } else {
@@ -166,13 +177,13 @@ contract Bridge is Ownable, Pausable, IBridge {
       originalToken.permit(
         _claimData.from._address,
         _claimData.to._address,
-        _claimData.amount,
+        _claimData.value,
         _claimData.deadline,
         _claimData.approveTokenTransferSig.v,
         _claimData.approveTokenTransferSig.r,
         _claimData.approveTokenTransferSig.s
       );
-      originalToken.transferFrom(_claimData.from._address, _claimData.to._address, _claimData.amount);
+      originalToken.transferFrom(_claimData.from._address, _claimData.to._address, _claimData.value);
 
       emitReleaseOriginalToken(_claimData);
     }
@@ -181,7 +192,7 @@ contract Bridge is Ownable, Pausable, IBridge {
   function emitReleaseOriginalToken(ClaimData calldata _claimData) internal {
     emit ReleaseOriginalToken(
       _claimData.targetTokenAddress,
-      _claimData.amount,
+      _claimData.value,
       _claimData.from._address,
       _claimData.to._address,
       _claimData.from.chainId,
@@ -193,7 +204,7 @@ contract Bridge is Ownable, Pausable, IBridge {
   function emitMintWrappedToken(ClaimData calldata _claimData, address correspondingWrappedToken) internal {
     emit MintWrappedToken(
         correspondingWrappedToken,
-        _claimData.amount,
+        _claimData.value,
         _claimData.from._address,
         _claimData.to._address,
         _claimData.from.chainId,
@@ -205,7 +216,7 @@ contract Bridge is Ownable, Pausable, IBridge {
   function emitBurnWrappedToken(DepositData calldata _depositData, address originalTokenAddress) internal {
     emit BurnWrappedToken(
       _depositData.token,
-      _depositData.amount,
+      _depositData.value,
       _depositData.from._address,
       _depositData.to._address,
       block.chainid,
@@ -217,7 +228,7 @@ contract Bridge is Ownable, Pausable, IBridge {
   function emitLockOriginalToken(DepositData calldata _depositData) internal {
     emit LockOriginalToken(
       _depositData.token,
-      _depositData.amount,
+      _depositData.value,
       _depositData.from._address,
       _depositData.to._address,
       block.chainid,
