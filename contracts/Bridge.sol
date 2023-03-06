@@ -21,8 +21,18 @@ contract Bridge is Ownable, Pausable, IBridge {
 
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
-  // keccak256("Claim(ClaimData _claimData,uint256 nonce)")
-  bytes32 public constant CLAIM_TYPEHASH = 0xf10ed718c1c876487c090b25f07bd85c000f913114090e02f588ce924e234c8d;
+
+  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 amount,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)Person(address _address,uint256 chainId)Signature(uint8 v,bytes32 r,bytes32 s)")
+  bytes32 public constant CLAIM_TYPEHASH = 0x00db05574adaee8e4410631e0b2fb115ef1a9565ccd194aff1600d0119cab74a;
+
+  // keccak256("ClaimData(User from,User to,uint256 amount,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)Person(address _address,uint256 chainId)Signature(uint8 v,bytes32 r,bytes32 s)")
+  bytes32 public constant CLAIMDATA_TYPEHASH = 0x9b2a22c17a57587cc64655cec9ee6e205b08465f2268defde6f1de8d3704272f;
+
+  // keccak256("Person(address _address,uint256 chainId)")
+  bytes32 public constant USER_TYPEHASH = 0x33adf0bc7b80f88268e001c40fcb4143d3aff6e0cdc9794f8c56bbd1813b65ef;
+
+  // keccak256("Signature(uint8 v,bytes32 r,bytes32 s)")
+  bytes32 public constant SIGNATURE_TYPEHASH = 0xcea59b5eccb60256d918b7a2e778f6161148c37e6dada57c32e20db10c50b631;
 
   constructor() {
     _pause();
@@ -32,6 +42,38 @@ contract Bridge is Ownable, Pausable, IBridge {
       keccak256(bytes("1")),
       block.chainid,
       address(this)
+    ));
+  }
+
+  function hash(Signature calldata sig) internal pure returns (bytes32) {
+    return keccak256(abi.encode(
+      SIGNATURE_TYPEHASH,
+      sig.v,
+      sig.r,
+      sig.s
+    ));
+  }
+
+  function hash(User calldata user) internal pure returns (bytes32) {
+    return keccak256(abi.encode(
+      USER_TYPEHASH,
+      user._address,
+      user.chainId
+    ));
+  }
+
+  function hash(ClaimData calldata _claimData) internal pure returns (bytes32) {
+    return keccak256(abi.encode(
+      CLAIMDATA_TYPEHASH,
+      hash(_claimData.from),
+      hash(_claimData.to),
+      _claimData.amount,
+      _claimData.originalToken,
+      _claimData.targetTokenAddress,
+      keccak256(bytes(_claimData.originalTokenName)),
+      keccak256(bytes(_claimData.originalTokenSymbol)),
+      _claimData.deadline,
+      hash(_claimData.approveTokenTransferSig)
     ));
   }
 
@@ -87,7 +129,7 @@ contract Bridge is Ownable, Pausable, IBridge {
         DOMAIN_SEPARATOR,
         keccak256(abi.encode(
           CLAIM_TYPEHASH,
-          _claimData,
+          hash(_claimData),
           nonces[_claimData.from._address]++
         ))
       )
