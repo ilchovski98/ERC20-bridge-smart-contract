@@ -54,7 +54,7 @@ contract Bridge is Ownable, Pausable, IBridge {
 
     // Todo make deposit work with erc20 tokens that do not implement permits
     PermitERC20 originalToken = PermitERC20(_depositData.token);
-    originalToken.permitTransferFrom(
+    originalToken.permit(
       _depositData.tokenOwner,
       _depositData.spender,
       _depositData.amount,
@@ -63,6 +63,7 @@ contract Bridge is Ownable, Pausable, IBridge {
       _depositData.approveTokenTransferSig.r,
       _depositData.approveTokenTransferSig.s
     );
+    originalToken.transferFrom(_depositData.tokenOwner, _depositData.spender, _depositData.amount);
 
     OriginalToken memory originalTokenData = originalTokenByWrappedToken[_depositData.token];
     bool isWrappedToken = originalTokenData.tokenAddress != address(0);
@@ -119,7 +120,8 @@ contract Bridge is Ownable, Pausable, IBridge {
 
       emitMintWrappedToken(_claimData, wrappedTokenByOriginalTokenByChainId[_claimData.sourceChainId][_claimData.originalToken]);
     } else {
-      PermitERC20(_claimData.targetTokenAddress).permitTransferFrom(
+      PermitERC20 originalToken = PermitERC20(_claimData.targetTokenAddress);
+      originalToken.permit(
         _claimData.tokenOwner,
         _claimData.recepient,
         _claimData.amount,
@@ -128,6 +130,7 @@ contract Bridge is Ownable, Pausable, IBridge {
         _claimData.approveTokenTransferSig.r,
         _claimData.approveTokenTransferSig.s
       );
+      originalToken.transferFrom(_claimData.tokenOwner, _claimData.recepient, _claimData.amount);
 
       emitReleaseOriginalToken(_claimData);
     }
