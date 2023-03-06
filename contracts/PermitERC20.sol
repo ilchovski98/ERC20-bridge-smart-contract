@@ -4,12 +4,12 @@ pragma solidity 0.8.17;
 import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetMinterPauser.sol";
 
 contract PermitERC20 is ERC20PresetMinterPauser {
-  mapping(address => uint256) private nonces;
+  mapping(address => uint256) private nonce;
 
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
-  // keccak256("PermitTransferFrom(address owner,address spender,uint256 amount,uint256 nonce,uint256 deadline)")
-  bytes32 public constant PERMIT_TYPEHASH = 0xdc278f4e77e6f658ea562d0e3def6941312028c19a2b807ab422e211758c69e9;
+  // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")
+  bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
 
   constructor(string memory _name, string memory _symbol) ERC20PresetMinterPauser(_name, _symbol) {
     DOMAIN_SEPARATOR = keccak256(abi.encode(
@@ -21,15 +21,7 @@ contract PermitERC20 is ERC20PresetMinterPauser {
     ));
   }
 
-  function permitTransferFrom(
-    address owner,
-    address spender,
-    uint256 amount,
-    uint256 deadline,
-    uint8 v,
-    bytes32 r,
-    bytes32 s
-  ) external {
+  function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external {
     require(deadline >= block.timestamp, "ERC20WithPermit: EXPIRED_SIGNATURE");
 
     bytes32 digest = keccak256(
@@ -40,8 +32,8 @@ contract PermitERC20 is ERC20PresetMinterPauser {
           PERMIT_TYPEHASH,
           owner,
           spender,
-          amount,
-          nonces[owner]++,
+          value,
+          nonce[owner]++,
           deadline
         ))
       )
@@ -54,11 +46,10 @@ contract PermitERC20 is ERC20PresetMinterPauser {
       "ERC20WithPermit: INVALID_SIGNATURE"
     );
 
-    _approve(owner, spender, amount);
-    transferFrom(owner, spender, amount);
+    _approve(owner, spender, value);
   }
 
-  function getNonce(address _address) external view returns(uint) {
-    return nonces[_address];
+  function nonces(address owner) external view returns(uint) {
+    return nonce[owner];
   }
 }
