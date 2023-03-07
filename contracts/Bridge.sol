@@ -12,8 +12,7 @@ import "./IBridge.sol";
 error InvalidAddress();
 error IncorrectDestinationChain();
 error CurrentAndProvidedChainsDoNotMatch();
-error RecoveredAddressCannotBeZero();
-error RecoveredAddressIsNotTheOwner();
+error AddressIsNotTheOwner();
 
 contract Bridge is Ownable, Pausable, IBridge {
   address public wrappedERC20Factory;
@@ -140,8 +139,8 @@ contract Bridge is Ownable, Pausable, IBridge {
 
     address recoveredAddress = ecrecover(digest, claimSig.v, claimSig.r, claimSig.s);
 
-    if (recoveredAddress == address(0)) revert RecoveredAddressCannotBeZero();
-    if (recoveredAddress != owner()) revert RecoveredAddressIsNotTheOwner();
+    if (recoveredAddress == address(0)) revert InvalidAddress();
+    if (recoveredAddress != owner()) revert AddressIsNotTheOwner();
 
     if (_claimData.to.chainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
     if (_claimData.from._address == address(0)) revert InvalidAddress();
