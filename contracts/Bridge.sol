@@ -12,6 +12,8 @@ import "./IBridge.sol";
 error InvalidAddress();
 error IncorrectDestinationChain();
 error CurrentAndProvidedChainsDoNotMatch();
+error RecoveredAddressCannotBeZero();
+error RecoveredAddressIsNotTheOwner();
 
 contract Bridge is Ownable, Pausable, IBridge {
   address public wrappedERC20Factory;
@@ -22,11 +24,11 @@ contract Bridge is Ownable, Pausable, IBridge {
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
 
-  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)User(address _address,uint256 chainId)Signature(uint8 v,bytes32 r,bytes32 s)")
-  bytes32 public constant CLAIM_TYPEHASH = 0x5be4bf9e03a600be3a2aac784815dc05ef659fea3de5dd87f7ea5379f4d428b4;
+  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)Signature(uint8 v,bytes32 r,bytes32 s)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIM_TYPEHASH = 0x7cb930bb64426adb2481eef52c6c87f24e202ee78ba2003559119ad3597e9d4b;
 
-  // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)User(address _address,uint256 chainId)Signature(uint8 v,bytes32 r,bytes32 s)")
-  bytes32 public constant CLAIMDATA_TYPEHASH = 0x4e4f91c51d1ccdc1fcd8c7ba8ed0061258ef02096a4a52e912dc538f728fb661;
+  // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)Signature(uint8 v,bytes32 r,bytes32 s)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIMDATA_TYPEHASH = 0x75410bc75133085859868fd4c3a7e9cc43de1f6dc58e7a5024802dee5be9d055;
 
   // keccak256("User(address _address,uint256 chainId)")
   bytes32 public constant USER_TYPEHASH = 0x265b4089f698d180c71c21e5c5a755d17cec5ca245cab57cf1f26696020008b6;
@@ -54,6 +56,19 @@ contract Bridge is Ownable, Pausable, IBridge {
 
   function nonce(address _owner) external view returns (uint256) {
     return nonces[_owner];
+  }
+
+  function pause() external onlyOwner {
+    _pause();
+  }
+
+  function unpause() external onlyOwner {
+    _unpause();
+  }
+
+  function setWrapperTokenFactory(address token) external onlyOwner {
+    if (token == address(0)) revert InvalidAddress();
+    wrappedERC20Factory = token;
   }
 
   function hash(Signature calldata sig) internal pure returns (bytes32) {
@@ -86,19 +101,6 @@ contract Bridge is Ownable, Pausable, IBridge {
       _claimData.deadline,
       hash(_claimData.approveTokenTransferSig)
     ));
-  }
-
-  function pause() external onlyOwner {
-    _pause();
-  }
-
-  function unpause() external onlyOwner {
-    _unpause();
-  }
-
-  function setWrapperTokenFactory(address token) external onlyOwner {
-    if (token == address(0)) revert InvalidAddress();
-    wrappedERC20Factory = token;
   }
 
   function deposit(DepositData calldata _depositData) external whenNotPaused {
@@ -148,17 +150,14 @@ contract Bridge is Ownable, Pausable, IBridge {
 
     address recoveredAddress = ecrecover(digest, claimSig.v, claimSig.r, claimSig.s);
 
-    require(
-      recoveredAddress != address(0) && recoveredAddress == owner(),
-      "BridgeClaim: INVALID_SIGNATURE"
-    );
+    if (recoveredAddress == address(0)) revert RecoveredAddressCannotBeZero();
+    if (recoveredAddress != owner()) revert RecoveredAddressIsNotTheOwner();
 
     if (_claimData.to.chainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
     if (_claimData.from._address == address(0)) revert InvalidAddress();
     if (_claimData.to._address == address(0)) revert InvalidAddress();
 
     if (_claimData.targetTokenAddress == address(0)) {
-
       if (wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] == address(0)) {
         WrappedERC20 newWrappedToken = WrappedERC20Factory(wrappedERC20Factory).createToken(
           string.concat("Wrapped ", _claimData.originalTokenName),
