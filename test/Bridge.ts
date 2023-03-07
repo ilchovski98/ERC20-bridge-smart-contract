@@ -1,97 +1,18 @@
 import hre, { ethers } from "hardhat";
 import { expect } from "chai";
+import { BigNumber, Contract, ContractInterface } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+
 import { Bridge, Bridge__factory, WrappedERC20Factory, WrappedERC20Factory__factory, PermitERC20, PermitERC20__factory } from "./../typechain-types";
 import { IBridge } from "./../typechain-types/contracts/IBridge";
-import getContractAbi from "../utils/getContractAbi";
-import { BigNumber, Contract, ContractInterface } from "ethers";
-
-const permit = async (token: PermitERC20, account: SignerWithAddress, owner: string, spender: string, value: number | string, deadline: number | string) => {
-  const nonce = await token.nonces(owner);
-
-  const domain = {
-    name: await token.name(),
-    version: '1',
-    chainId: hre.network.config.chainId,
-    verifyingContract: token.address
-  };
-
-  const Permit = [
-    { name: 'owner', type: 'address' },
-    { name: 'spender', type: 'address' },
-    { name: 'value', type: 'uint256' },
-    { name: 'nonce', type: 'uint256' },
-    { name: 'deadline', type: 'uint256' }
-  ];
-
-  const message = {
-    owner: owner,
-    spender: spender,
-    value: value,
-    nonce: nonce.toHexString(),
-    deadline
-  };
-
-  const signatureLike = await account._signTypedData(domain, { Permit }, message);
-  const signature = ethers.utils.splitSignature(signatureLike);
-
-  return signature;
-};
-
-const signClaimData = async (bridge: Bridge, signer: SignerWithAddress, claimData: IBridge.ClaimDataStruct) => {
-  const domain = {
-    name: await bridge.name(),
-    version: '1',
-    chainId: hre.network.config.chainId,
-    verifyingContract: bridge.address
-  };
-
-  const types = {
-    Signature: [
-      { name: 'v', type: 'uint8' },
-      { name: 'r', type: 'bytes32' },
-      { name: 's', type: 'bytes32' }
-    ],
-    User: [
-      { name: '_address', type: 'address' },
-      { name: 'chainId', type: 'uint256' }
-    ],
-    ClaimData: [
-      { name: 'from', type: 'User' },
-      { name: 'to', type: 'User' },
-      { name: 'value', type: 'uint256' },
-      { name: 'originalToken', type: 'address' },
-      { name: 'targetTokenAddress', type: 'address' },
-      { name: 'originalTokenName', type: 'string' },
-      { name: 'originalTokenSymbol', type: 'string' },
-      { name: 'deadline', type: 'uint256' },
-      { name: 'approveTokenTransferSig', type: 'Signature' },
-    ],
-    Claim: [
-      { name: '_claimData', type: 'ClaimData' },
-      { name: 'nonce', type: 'uint256' }
-    ]
-  };
-
-  const nonce = (await bridge.nonce(claimData.from._address)).toHexString();
-
-  const value = {
-    _claimData: claimData,
-    nonce: nonce
-  };
-
-  const signatureLike = await signer._signTypedData(domain, types, value);
-  const signature = ethers.utils.splitSignature(signatureLike);
-
-  return signature;
-};
+import { getContractAbi, permit, signClaimData } from "../utils";
 
 describe("Bridge", function () {
   let bridge1: Bridge, bridge2: Bridge;
   let dogeCoin: PermitERC20, randomCoin: PermitERC20;
   let deployer: SignerWithAddress, userAccount1: SignerWithAddress, userAccount2: SignerWithAddress, coinDeployer: SignerWithAddress;
-  let wrappedTokenAbi: ContractInterface;
+  let wrappedTokenAbi: ContractInterface, permitTokenAbi: ContractInterface;
   let wrappedDogeCoinToken: Contract;
   let depositData: IBridge.DepositDataStruct;
 
@@ -127,6 +48,7 @@ describe("Bridge", function () {
 
     // Contract ABIs
     wrappedTokenAbi = getContractAbi("./../artifacts/contracts/WrappedERC20.sol/WrappedERC20.json");
+    permitTokenAbi = getContractAbi("./../artifacts/contracts/PermitERC20.sol/PermitERC20.json");
 
     // Original ERC20 coins that implement EIP-2612
     const permitTokenFactory: PermitERC20__factory = await ethers.getContractFactory("PermitERC20");
@@ -186,7 +108,8 @@ describe("Bridge", function () {
       expect(await dogeCoin.balanceOf(userAccount1.address)).to.be.equal(100, "Initial token balance of userAccount1 is incorect");
       expect(await dogeCoin.balanceOf(bridge1.address)).to.be.equal(0, "Initial token balance of bridge1 is incorect");
       const deadline = (await time.latest()) + 60 * 60;
-      const approveSignature = await permit(dogeCoin, userAccount1, userAccount1.address, bridge1.address, 20, deadline);
+      const value = 40;
+      const approveSignature = await permit(dogeCoin, userAccount1, userAccount1.address, bridge1.address, value, deadline);
 
       depositData = {
         from: {
@@ -199,7 +122,7 @@ describe("Bridge", function () {
         },
         spender: bridge1.address,
         token: dogeCoin.address,
-        value: 20,
+        value: value,
         deadline: deadline,
         approveTokenTransferSig: {
           v: approveSignature.v,
@@ -211,8 +134,8 @@ describe("Bridge", function () {
       const depositTx = await bridge1.deposit(depositData);
       await depositTx.wait();
 
-      expect(await dogeCoin.balanceOf(userAccount1.address)).to.be.equal(80, "Token balance of userAccount1 is incorect");
-      expect(await dogeCoin.balanceOf(bridge1.address)).to.be.equal(20, "Token balance of bridge1 is incorect");
+      expect(await dogeCoin.balanceOf(userAccount1.address)).to.be.equal(100 - value, "Token balance of userAccount1 is incorect");
+      expect(await dogeCoin.balanceOf(bridge1.address)).to.be.equal(value, "Token balance of bridge1 is incorect");
     });
 
     it("Signature should expire after 1h", async function() {
@@ -295,7 +218,7 @@ describe("Bridge", function () {
       ).to.be.revertedWithCustomError(bridge2, "RecoveredAddressIsNotTheOwner");
     });
 
-    it("Should not deploy new WrappedToken and use the old one", async function() {
+    it("Should not deploy new WrappedToken and mint from the old one", async function() {
       const claimSignature = await signClaimData(bridge2, deployer, firstClaimData);
       const claimSignatureSplit = {
         v: claimSignature.v,
@@ -361,7 +284,47 @@ describe("Bridge", function () {
 
   describe("Claim ERC20 from Bridge 1 (Release)", function() {
     it("Release original ERC20 token", async function() {
+      const deadline = ethers.constants.MaxUint256.toString();
+      const targetTokenAddress = (await bridge2.originalTokenByWrappedToken(depositData.token)).tokenAddress; // Should be the original, initially deployed ERC20 token (DogeCoin)
 
+      const claimData: IBridge.ClaimDataStruct = {
+        from: {
+          _address: userAccount1.address,
+          chainId: ethers.BigNumber.from(hre.network.config.chainId)
+        },
+        to: {
+          _address: userAccount1.address,
+          chainId: ethers.BigNumber.from(hre.network.config.chainId)
+        },
+        value: 40,
+        originalToken: depositData.token,
+        targetTokenAddress: targetTokenAddress,
+        originalTokenName: "",
+        originalTokenSymbol: "",
+        deadline: deadline
+      };
+
+      const claimSignature = await signClaimData(bridge1, deployer, claimData);
+
+      expect(dogeCoin.address).to.be.equal(
+        targetTokenAddress,
+        "Bridge2 suggests incorrect original token for the WrappedDogeCoin"
+      );
+      expect(
+        (await dogeCoin.balanceOf(bridge1.address)).toString()
+      ).to.be.equal("40", "Before claim: Bridge1 has incorrect DogeCoin balance");
+      expect(
+        (await dogeCoin.balanceOf(userAccount1.address)).toString()
+      ).to.be.equal("60", "Before claim: userAccount1 has incorrect DogeCoin balance");
+
+      await bridge1.connect(userAccount1).claim(claimData, claimSignature);
+
+      expect(
+        (await dogeCoin.balanceOf(bridge1.address)).toString()
+      ).to.be.equal("0", "After claim: Bridge1 has incorrect DogeCoin balance");
+      expect(
+        (await dogeCoin.balanceOf(userAccount1.address)).toString()
+      ).to.be.equal("100", "After claim: userAccount1 has incorrect DogeCoin balance");
     });
   });
 })

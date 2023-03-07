@@ -24,11 +24,11 @@ contract Bridge is Ownable, Pausable, IBridge {
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
 
-  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)Signature(uint8 v,bytes32 r,bytes32 s)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIM_TYPEHASH = 0x7cb930bb64426adb2481eef52c6c87f24e202ee78ba2003559119ad3597e9d4b;
+  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIM_TYPEHASH = 0x556874b59c621ea5ce3b1194dd240a0ca2466a21ca141da86ab0942dc201f9ed;
 
-  // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline,Signature approveTokenTransferSig)Signature(uint8 v,bytes32 r,bytes32 s)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIMDATA_TYPEHASH = 0x75410bc75133085859868fd4c3a7e9cc43de1f6dc58e7a5024802dee5be9d055;
+  // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIMDATA_TYPEHASH = 0x0109846e88e5c75e906d17a4410ccd3a73b6f21524f1d37410a1d22b6483921c;
 
   // keccak256("User(address _address,uint256 chainId)")
   bytes32 public constant USER_TYPEHASH = 0x265b4089f698d180c71c21e5c5a755d17cec5ca245cab57cf1f26696020008b6;
@@ -71,15 +71,6 @@ contract Bridge is Ownable, Pausable, IBridge {
     wrappedERC20Factory = token;
   }
 
-  function hash(Signature calldata sig) internal pure returns (bytes32) {
-    return keccak256(abi.encode(
-      SIGNATURE_TYPEHASH,
-      sig.v,
-      sig.r,
-      sig.s
-    ));
-  }
-
   function hash(User calldata user) internal pure returns (bytes32) {
     return keccak256(abi.encode(
       USER_TYPEHASH,
@@ -98,8 +89,7 @@ contract Bridge is Ownable, Pausable, IBridge {
       _claimData.targetTokenAddress,
       keccak256(bytes(_claimData.originalTokenName)),
       keccak256(bytes(_claimData.originalTokenSymbol)),
-      _claimData.deadline,
-      hash(_claimData.approveTokenTransferSig)
+      _claimData.deadline
     ));
   }
 
@@ -173,16 +163,7 @@ contract Bridge is Ownable, Pausable, IBridge {
       emitMintWrappedToken(_claimData, wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken]);
     } else {
       PermitERC20 originalToken = PermitERC20(_claimData.targetTokenAddress);
-      originalToken.permit(
-        _claimData.from._address,
-        _claimData.to._address,
-        _claimData.value,
-        _claimData.deadline,
-        _claimData.approveTokenTransferSig.v,
-        _claimData.approveTokenTransferSig.r,
-        _claimData.approveTokenTransferSig.s
-      );
-      originalToken.transferFrom(_claimData.from._address, _claimData.to._address, _claimData.value);
+      originalToken.transfer(_claimData.to._address, _claimData.value);
 
       emitReleaseOriginalToken(_claimData);
     }

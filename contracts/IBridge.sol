@@ -31,7 +31,6 @@ interface IBridge {
     string originalTokenName;
     string originalTokenSymbol;
     uint256 deadline;
-    Signature approveTokenTransferSig;
   }
 
   struct Signature {
