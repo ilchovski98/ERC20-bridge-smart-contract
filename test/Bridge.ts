@@ -88,6 +88,19 @@ describe("Bridge", function () {
     ).to.be.equal("100", "UserAccount1 has incorrect balance of RandomCoin tokens");
   });
 
+  describe("WrappedERC20Factory", function() {
+    it("Should revert on createToken call and not owner", async function() {
+      const wrappedTokenFactoryFactory: WrappedERC20Factory__factory = await ethers.getContractFactory("WrappedERC20Factory");
+
+      const wrappedTokenFactory: WrappedERC20Factory = await wrappedTokenFactoryFactory.deploy(deployer.address);
+      await wrappedTokenFactory.deployed();
+
+      await expect(
+        wrappedTokenFactory.connect(userAccount1).createToken("ElonCoin", "EC")
+      ).to.be.revertedWith("Ownable: caller is not the owner");
+    });
+  });
+
   describe("Contract pausing", function() {
     it("Contract should be paused after deployment", async function() {
       const bridge1IsPaused = await bridge1.paused();
@@ -200,10 +213,6 @@ describe("Bridge", function () {
     });
   });
 
-  // function setWrapperTokenFactory(address token) external EonlyOwner {
-  //   Iif (token == address(0)) revert InvalidAddress();
-  //   wrappedERC20Factory = token;
-  // }
   describe("setWrapperTokenFactory", function() {
     it("Should revert on attempt to change WrapperTokenFactory address if not owner", async function() {
       await expect(bridge1.connect(userAccount2).setWrapperTokenFactory(userAccount2.address)).to.be.revertedWith("Ownable: caller is not the owner");
@@ -283,6 +292,32 @@ describe("Bridge", function () {
       await expect(
         bridge1.deposit(depositData)
       ).to.be.revertedWith("ERC20WithPermit: EXPIRED_SIGNATURE");
+    });
+
+    it("Should revert when provided with invalid signature.v", async function() {
+      const deadline = (await time.latest()) + 60 * 60;
+      const approveSignature = await permit(
+        dogeCoin,
+        userAccount1,
+        userAccount1.address,
+        bridge1.address,
+        20,
+        deadline
+      );
+
+      depositData = {
+        ...depositData,
+        deadline: deadline,
+        approveTokenTransferSig: {
+          v: 17,
+          r: approveSignature.r,
+          s: approveSignature.s
+        }
+      }
+
+      await expect(
+        bridge1.deposit(depositData)
+      ).to.be.revertedWith("ERC20WithPermit: INVALID_SIGNATURE");
     });
 
     it("Should revert on attempt to change WrapperTokenFactory address if not owner", async function() {
