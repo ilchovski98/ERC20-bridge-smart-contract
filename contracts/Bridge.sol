@@ -4,12 +4,15 @@ pragma solidity 0.8.17;
 import "@openzeppelin/contracts/interfaces/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/draft-IERC20Permit.sol";
 import "./PermitERC20.sol";
 import "./WrappedERC20.sol";
 import "./WrappedERC20Factory.sol";
 import "./IBridge.sol";
 
 error InvalidAddress();
+error InvalidChainId();
+error InvalidTokenAmount();
 error IncorrectDestinationChain();
 error CurrentAndProvidedChainsDoNotMatch();
 error AddressIsNotTheOwner();
@@ -23,11 +26,11 @@ contract Bridge is Ownable, Pausable, IBridge {
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
 
-  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIM_TYPEHASH = 0x556874b59c621ea5ce3b1194dd240a0ca2466a21ca141da86ab0942dc201f9ed;
+  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIM_TYPEHASH = 0x9bbf21d42baedc93dc6b9adbef5fb381596f70422c1ca3ce988486b9c99d2145;
 
-  // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string originalTokenName,string originalTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIMDATA_TYPEHASH = 0x0109846e88e5c75e906d17a4410ccd3a73b6f21524f1d37410a1d22b6483921c;
+  // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIMDATA_TYPEHASH = 0xeb58e95b67ff6c8b18df6176f42c5e3697221b49964ec25b8d18806cb060b240;
 
   // keccak256("User(address _address,uint256 chainId)")
   bytes32 public constant USER_TYPEHASH = 0x265b4089f698d180c71c21e5c5a755d17cec5ca245cab57cf1f26696020008b6;
@@ -86,27 +89,28 @@ contract Bridge is Ownable, Pausable, IBridge {
       _claimData.value,
       _claimData.originalToken,
       _claimData.targetTokenAddress,
-      keccak256(bytes(_claimData.originalTokenName)),
-      keccak256(bytes(_claimData.originalTokenSymbol)),
+      keccak256(bytes(_claimData.targetTokenName)),
+      keccak256(bytes(_claimData.targetTokenSymbol)),
       _claimData.deadline
     ));
   }
 
-  function deposit(DepositData calldata _depositData) external whenNotPaused {
-    if (_depositData.to._address == address(0)) revert InvalidAddress();
-    if (_depositData.token == address(0)) revert InvalidAddress();
+  modifier validateTransfer(address from, address to, address token, uint256 value) {
+    if (from == address(0)) revert InvalidAddress();
+    if (to == address(0)) revert InvalidAddress();
+    if (token == address(0)) revert InvalidAddress();
+    if (value == 0) revert InvalidTokenAmount();
+    _;
+  }
 
-    // Todo make deposit work with erc20 tokens that do not implement permits
-    PermitERC20 originalToken = PermitERC20(_depositData.token);
-    originalToken.permit(
-      _depositData.from._address,
-      _depositData.spender,
-      _depositData.value,
-      _depositData.deadline,
-      _depositData.approveTokenTransferSig.v,
-      _depositData.approveTokenTransferSig.r,
-      _depositData.approveTokenTransferSig.s
-    );
+  modifier validateDeposit(address spender, uint256 destinationChainId) {
+    if (spender == address(0)) revert InvalidAddress();
+    if (destinationChainId == 0) revert InvalidChainId();
+    _;
+  }
+
+  function _deposit(DepositData calldata _depositData) internal {
+    IERC20 originalToken = IERC20(_depositData.token);
     originalToken.transferFrom(_depositData.from._address, _depositData.spender, _depositData.value);
 
     OriginalToken memory originalTokenData = originalTokenByWrappedToken[_depositData.token];
@@ -121,10 +125,60 @@ contract Bridge is Ownable, Pausable, IBridge {
     }
   }
 
-  function claim(
-    ClaimData calldata _claimData,
-    Signature calldata claimSig
-  ) external whenNotPaused {
+  function deposit(DepositData calldata _depositData)
+    external
+    whenNotPaused
+    validateTransfer(
+      _depositData.from._address,
+      _depositData.to._address,
+      _depositData.token,
+      _depositData.value
+    )
+    validateDeposit(
+      _depositData.spender,
+      _depositData.to.chainId
+    )
+  {
+    _deposit(_depositData);
+  }
+
+  function depositWithPermit(DepositData calldata _depositData)
+    external
+    whenNotPaused
+    validateTransfer(
+      _depositData.from._address,
+      _depositData.to._address,
+      _depositData.token,
+      _depositData.value
+    )
+    validateDeposit(
+      _depositData.spender,
+      _depositData.to.chainId
+    )
+  {
+    IERC20Permit originalToken = IERC20Permit(_depositData.token);
+    originalToken.permit(
+      _depositData.from._address,
+      _depositData.spender,
+      _depositData.value,
+      _depositData.deadline,
+      _depositData.approveTokenTransferSig.v,
+      _depositData.approveTokenTransferSig.r,
+      _depositData.approveTokenTransferSig.s
+    );
+    _deposit(_depositData);
+  }
+
+  function claim(ClaimData calldata _claimData, Signature calldata claimSig)
+    external
+    whenNotPaused
+    validateTransfer(
+      _claimData.from._address,
+      _claimData.to._address,
+      _claimData.originalToken,
+      _claimData.value
+    )
+  {
     bytes32 digest = keccak256(
       abi.encodePacked(
         "\x19\x01",
@@ -142,26 +196,23 @@ contract Bridge is Ownable, Pausable, IBridge {
     if (recoveredAddress == address(0)) revert InvalidAddress();
     if (recoveredAddress != owner()) revert AddressIsNotTheOwner();
 
+    if (_claimData.from.chainId == 0) revert InvalidChainId();
     if (_claimData.to.chainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
-    if (_claimData.from._address == address(0)) revert InvalidAddress();
-    if (_claimData.to._address == address(0)) revert InvalidAddress();
 
     if (_claimData.targetTokenAddress == address(0)) {
       if (wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] == address(0)) {
-        WrappedERC20 newWrappedToken = WrappedERC20Factory(wrappedERC20Factory).createToken(
-          string.concat("Wrapped ", _claimData.originalTokenName),
-          string.concat("W", _claimData.originalTokenSymbol)
-        );
+        WrappedERC20 newWrappedToken = WrappedERC20Factory(wrappedERC20Factory).createToken(_claimData.targetTokenName, _claimData.targetTokenSymbol);
 
         wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] = address(newWrappedToken);
         originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(_claimData.originalToken, _claimData.from.chainId);
       }
 
-      WrappedERC20(wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken]).mint(_claimData.to._address, _claimData.value);
+      address wrappedToken = wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken];
+      WrappedERC20(wrappedToken).mint(_claimData.to._address, _claimData.value);
 
-      emitMintWrappedToken(_claimData, wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken]);
+      emitMintWrappedToken(_claimData, wrappedToken);
     } else {
-      PermitERC20 originalToken = PermitERC20(_claimData.targetTokenAddress);
+      IERC20 originalToken = IERC20(_claimData.targetTokenAddress);
       originalToken.transfer(_claimData.to._address, _claimData.value);
 
       emitReleaseOriginalToken(_claimData);

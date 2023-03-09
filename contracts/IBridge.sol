@@ -28,8 +28,8 @@ interface IBridge {
     uint256 value;
     address originalToken;
     address targetTokenAddress;
-    string originalTokenName;
-    string originalTokenSymbol;
+    string targetTokenName;
+    string targetTokenSymbol;
     uint256 deadline;
   }
 

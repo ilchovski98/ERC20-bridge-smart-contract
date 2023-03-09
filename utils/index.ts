@@ -80,8 +80,8 @@ export const signClaimData = async (bridge: Bridge, signer: SignerWithAddress, c
       { name: 'value', type: 'uint256' },
       { name: 'originalToken', type: 'address' },
       { name: 'targetTokenAddress', type: 'address' },
-      { name: 'originalTokenName', type: 'string' },
-      { name: 'originalTokenSymbol', type: 'string' },
+      { name: 'targetTokenName', type: 'string' },
+      { name: 'targetTokenSymbol', type: 'string' },
       { name: 'deadline', type: 'uint256' }
     ],
     Claim: [
