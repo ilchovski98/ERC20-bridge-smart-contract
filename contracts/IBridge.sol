@@ -39,10 +39,6 @@ interface IBridge {
     bytes32 s;
   }
 
-  function deposit(DepositData calldata _depositData) external;
-
-  function claim(ClaimData calldata _claimData, Signature calldata claimSig) external;
-
   event LockOriginalToken(
     address indexed lockedTokenAddress,
     uint256 value,
@@ -81,4 +77,12 @@ interface IBridge {
     uint256 toChainId,
     address sourceTokenAddress
   );
+
+  function setWrapperTokenFactory(address token) external;
+
+  function deposit(DepositData calldata _depositData) external;
+
+  function depositWithPermit(DepositData calldata _depositData) external;
+
+  function claim(ClaimData calldata _claimData, Signature calldata claimSig) external;
 }
