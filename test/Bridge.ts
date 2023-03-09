@@ -13,7 +13,7 @@ import {
   PermitERC20__factory
 } from "./../typechain-types";
 import { IBridge } from "./../typechain-types/contracts/IBridge";
-import { getContractAbi, permit, signClaimData } from "../utils";
+import { getContractAbi } from "../utils";
 
 describe("Bridge", function () {
   // Bridges
@@ -141,7 +141,8 @@ describe("Bridge", function () {
         userAccount1.address,
         bridge1.address,
         value,
-        deadline
+        deadline,
+        chainId
       );
 
       depositData = {
@@ -205,7 +206,7 @@ describe("Bridge", function () {
         deadline: ethers.constants.MaxUint256
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
 
       const claimSignatureSplit = {
         v: claimSignature.v,
@@ -339,7 +340,8 @@ describe("Bridge", function () {
           userAccount1.address,
           bridge1.address,
           value,
-          deadline
+          deadline,
+          chainId
         );
 
         depositData = {
@@ -373,7 +375,8 @@ describe("Bridge", function () {
           userAccount1.address,
           bridge1.address,
           20,
-          deadline
+          deadline,
+          chainId
         );
 
         depositData = {
@@ -439,7 +442,8 @@ describe("Bridge", function () {
           userAccount1.address,
           bridge1.address,
           20,
-          deadline
+          deadline,
+          chainId
         );
 
         depositData = {
@@ -470,7 +474,8 @@ describe("Bridge", function () {
           userAccount1.address,
           ethers.constants.AddressZero,
           20,
-          deadline
+          deadline,
+          chainId
         );
 
         depositData = {
@@ -523,7 +528,7 @@ describe("Bridge", function () {
         targetTokenSymbol: "W" + (await dogeCoin.symbol())
       };
 
-      const claimSignature = await signClaimData(bridge2, deployer, claimData);
+      const claimSignature = await signClaimData(bridge2, deployer, claimData, chainId);
 
       const claimSignatureSplit = {
         v: claimSignature.v,
@@ -545,7 +550,7 @@ describe("Bridge", function () {
         }
       };
 
-      const claimSignature = await signClaimData(bridge2, deployer, claimData);
+      const claimSignature = await signClaimData(bridge2, deployer, claimData, chainId);
 
       firstClaimSignatureSplit = {
         v: claimSignature.v,
@@ -579,7 +584,7 @@ describe("Bridge", function () {
     });
 
     it("Should not deploy new WrappedToken and mint from the old one", async function() {
-      const claimSignature = await signClaimData(bridge2, deployer, claimData);
+      const claimSignature = await signClaimData(bridge2, deployer, claimData, chainId);
       const claimSignatureSplit = {
         v: claimSignature.v,
         r: claimSignature.r,
@@ -612,7 +617,15 @@ describe("Bridge", function () {
   describe("Deposit WERC20 to Bridge 2 (Burn)", function() {
     it("Should revert when providing wrong destination chainId", async function() {
       const deadline = (await time.latest()) + 60 * 60;
-      const approveSignature = await permit(wrappedDogeCoinToken, userAccount1, userAccount1.address, bridge2.address, 40, deadline);
+      const approveSignature = await permit(
+        wrappedDogeCoinToken,
+        userAccount1,
+        userAccount1.address,
+        bridge2.address,
+        40,
+        deadline,
+        chainId
+      );
 
       depositData = {
         from: {
@@ -692,7 +705,7 @@ describe("Bridge", function () {
         deadline: deadline
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
 
       await expect(
         bridge1.connect(userAccount1).claim(claimData, claimSignature)
@@ -708,7 +721,7 @@ describe("Bridge", function () {
         }
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
 
       await expect(
         bridge1.connect(userAccount1).claim(claimData, claimSignature)
@@ -728,7 +741,7 @@ describe("Bridge", function () {
         }
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
 
       await expect(
         bridge1.connect(userAccount1).claim(claimData, claimSignature)
@@ -744,7 +757,7 @@ describe("Bridge", function () {
         }
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
       const customSignature = {
         ...claimSignature,
         v: 17
@@ -756,7 +769,7 @@ describe("Bridge", function () {
     });
 
     it("Release original ERC20 token", async function() {
-      const claimSignature = await signClaimData(bridge1, deployer, claimData);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
 
       expect(dogeCoin.address).to.be.equal(
         claimData.targetTokenAddress,
@@ -779,4 +792,89 @@ describe("Bridge", function () {
       ).to.be.equal("100", "After claim: userAccount1 has incorrect DogeCoin balance");
     });
   });
-})
+});
+
+async function permit(
+  token: PermitERC20,
+  account: SignerWithAddress,
+  owner: string,
+  spender: string,
+  value: number | string,
+  deadline: number | string
+) {
+  const nonce = await token.nonces(owner);
+
+  const domain = {
+    name: await token.name(),
+    version: '1',
+    chainId: hre.network.config.chainId,
+    verifyingContract: token.address
+  };
+
+  const Permit = [
+    { name: 'owner', type: 'address' },
+    { name: 'spender', type: 'address' },
+    { name: 'value', type: 'uint256' },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'deadline', type: 'uint256' }
+  ];
+
+  const message = {
+    owner: owner,
+    spender: spender,
+    value: value,
+    nonce: nonce.toHexString(),
+    deadline
+  };
+
+  const signatureLike = await account._signTypedData(domain, { Permit }, message);
+  const signature = ethers.utils.splitSignature(signatureLike);
+
+  return signature;
+};
+
+async function signClaimData(
+  bridge: Bridge,
+  signer: SignerWithAddress,
+  claimData: IBridge.ClaimDataStruct
+) {
+  const domain = {
+    name: await bridge.name(),
+    version: '1',
+    chainId: hre.network.config.chainId,
+    verifyingContract: bridge.address
+  };
+
+  const types = {
+    User: [
+      { name: '_address', type: 'address' },
+      { name: 'chainId', type: 'uint256' }
+    ],
+    ClaimData: [
+      { name: 'from', type: 'User' },
+      { name: 'to', type: 'User' },
+      { name: 'value', type: 'uint256' },
+      { name: 'originalToken', type: 'address' },
+      { name: 'targetTokenAddress', type: 'address' },
+      { name: 'targetTokenName', type: 'string' },
+      { name: 'targetTokenSymbol', type: 'string' },
+      { name: 'deadline', type: 'uint256' }
+    ],
+    Claim: [
+      { name: '_claimData', type: 'ClaimData' },
+      { name: 'nonce', type: 'uint256' }
+    ]
+  };
+
+  const nonce = (await bridge.nonce(claimData.from._address)).toHexString();
+
+  const value = {
+    _claimData: claimData,
+    nonce: nonce
+  };
+
+  const signatureLike = await signer._signTypedData(domain, types, value);
+  const signature = ethers.utils.splitSignature(signatureLike);
+
+  return signature;
+};
