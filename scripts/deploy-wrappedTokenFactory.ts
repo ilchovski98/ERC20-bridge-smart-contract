@@ -25,9 +25,14 @@ export async function deployWrappedTokenFactory(bridgeAddress: string) {
       try {
         await hre.run("verify:verify", {
           address: wrappedTokenFactoryContract.address,
+          constructorArguments: [bridgeContract.address]
         });
       } catch (error) {
-        console.error(error.reason);
+        if (error.message.toLowerCase().includes('already verified')) {
+          console.log('Already verified!');
+        } else {
+          console.log(error);
+        }
       }
     }
 

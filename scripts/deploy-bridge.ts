@@ -18,9 +18,15 @@ export async function deployBridge(bridgeName: string) {
       try {
         await hre.run("verify:verify", {
           address: bridgeContract.address,
+          constructorArguments: [bridgeName]
         });
+
       } catch (error) {
-        console.error(error.reason);
+        if (error.message.toLowerCase().includes('already verified')) {
+          console.log('Already verified!');
+        } else {
+          console.log(error);
+        }
       }
     }
 
