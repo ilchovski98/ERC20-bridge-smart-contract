@@ -132,7 +132,7 @@ describe("Bridge", function () {
       expect(bridge1IsPaused).to.be.equal(true, "Bridge1 is not paused");
     });
 
-    it("Should revert on deposit calls while paused", async function() {
+    it("Should revert on depositWithPermit calls while paused", async function() {
       const deadline = (await time.latest()) + 60 * 60;
       const value = 40;
       const approveSignature = await permit(
@@ -165,6 +165,26 @@ describe("Bridge", function () {
       };
 
       await expect(bridge1.depositWithPermit(depositData)).to.be.revertedWith("Pausable: paused");
+    });
+
+    it("Should revert on deposit calls while paused", async function() {
+      const value = 40;
+
+      const approveTx = await randomCoin.connect(userAccount1).approve(bridge1.address, value);
+      await approveTx.wait();
+
+      depositData = {
+        ...depositData,
+        token: randomCoin.address,
+        value: value,
+        approveTokenTransferSig: {
+          v: 0,
+          r: ethers.constants.HashZero,
+          s: ethers.constants.HashZero
+        }
+      };
+
+      await expect(bridge1.deposit(depositData)).to.be.revertedWith("Pausable: paused");
     });
 
     it("Should revert on claim call while paused", async function() {
@@ -224,187 +244,267 @@ describe("Bridge", function () {
   });
 
   describe("Deposit ERC20 to Bridge 1 (Lock)", function() {
-    it("Funds are deposited to the bridge", async function() {
-      expect(
-        await dogeCoin.balanceOf(userAccount1.address)
-      ).to.be.equal(100, "Initial token balance of userAccount1 is incorect");
-      expect(
-        await dogeCoin.balanceOf(bridge1.address)
-      ).to.be.equal(0, "Initial token balance of bridge1 is incorect");
+    describe("deposit", function() {
+      it("Should revert when from address is address(0)", async function() {
+        depositData = {
+          ...depositData,
+          from: {
+            _address: ethers.constants.AddressZero,
+            chainId: chainId
+          }
+        };
 
-      const deadline = (await time.latest()) + 60 * 60;
-      const value = 40;
-      const approveSignature = await permit(
-        dogeCoin,
-        userAccount1,
-        userAccount1.address,
-        bridge1.address,
-        value,
-        deadline
-      );
+        await expect(
+          bridge1.deposit(depositData)
+        ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
+      });
 
-      depositData = {
-        ...depositData,
-        token: dogeCoin.address,
-        value: value,
-        deadline: deadline,
-        approveTokenTransferSig: {
-          v: approveSignature.v,
-          r: approveSignature.r,
-          s: approveSignature.s
+      it("Should revert when to address is address(0)", async function() {
+        depositData = {
+          ...depositData,
+          from: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          to: {
+            _address: ethers.constants.AddressZero,
+            chainId: chainId
+          }
+        };
+
+        await expect(
+          bridge1.deposit(depositData)
+        ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
+      });
+
+      it("Should revert when to chainId is 0", async function() {
+        depositData = {
+          ...depositData,
+          to: {
+            _address: userAccount1.address,
+            chainId: 0
+          }
+        };
+        await expect(
+          bridge1.deposit(depositData)
+        ).to.be.revertedWithCustomError(bridge1, "InvalidChainId");
+      });
+
+      it("Funds are deposited to the bridge", async function() {
+        expect(
+          await randomCoin.balanceOf(userAccount1.address)
+        ).to.be.equal(100, "Initial token balance of userAccount1 is incorect");
+        expect(
+          await randomCoin.balanceOf(bridge1.address)
+        ).to.be.equal(0, "Initial token balance of bridge1 is incorect");
+
+        const value = 40;
+
+        depositData = {
+          ...depositData,
+          to: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          token: randomCoin.address,
+          value: value
+        };
+
+        const depositTx = await bridge1.deposit(depositData);
+        await depositTx.wait();
+
+        expect(
+          await randomCoin.balanceOf(userAccount1.address)
+        ).to.be.equal(100 - value, "Token balance of userAccount1 is incorect");
+        expect(
+          await randomCoin.balanceOf(bridge1.address)
+        ).to.be.equal(value, "Token balance of bridge1 is incorect");
+      });
+    });
+
+    describe("depositWithPermit", function() {
+      it("Funds are deposited to the bridge", async function() {
+        expect(
+          await dogeCoin.balanceOf(userAccount1.address)
+        ).to.be.equal(100, "Initial token balance of userAccount1 is incorect");
+        expect(
+          await dogeCoin.balanceOf(bridge1.address)
+        ).to.be.equal(0, "Initial token balance of bridge1 is incorect");
+
+        const deadline = (await time.latest()) + 60 * 60;
+        const value = 40;
+        const approveSignature = await permit(
+          dogeCoin,
+          userAccount1,
+          userAccount1.address,
+          bridge1.address,
+          value,
+          deadline
+        );
+
+        depositData = {
+          ...depositData,
+          token: dogeCoin.address,
+          value: value,
+          deadline: deadline,
+          approveTokenTransferSig: {
+            v: approveSignature.v,
+            r: approveSignature.r,
+            s: approveSignature.s
+          }
+        };
+
+        const depositTx = await bridge1.depositWithPermit(depositData);
+        await depositTx.wait();
+
+        expect(
+          await dogeCoin.balanceOf(userAccount1.address)
+        ).to.be.equal(100 - value, "Token balance of userAccount1 is incorect");
+        expect(
+          await dogeCoin.balanceOf(bridge1.address)
+        ).to.be.equal(value, "Token balance of bridge1 is incorect");
+      });
+
+      it("Signature should expire after 1h", async function() {
+        const deadline = (await time.latest()) + 60 * 60;
+        const approveSignature = await permit(
+          dogeCoin,
+          userAccount1,
+          userAccount1.address,
+          bridge1.address,
+          20,
+          deadline
+        );
+
+        depositData = {
+          ...depositData,
+          deadline: deadline,
+          approveTokenTransferSig: {
+            v: approveSignature.v,
+            r: approveSignature.r,
+            s: approveSignature.s
+          }
         }
-      };
 
-      const depositTx = await bridge1.depositWithPermit(depositData);
-      await depositTx.wait();
+        await time.increase(3601);
 
-      expect(
-        await dogeCoin.balanceOf(userAccount1.address)
-      ).to.be.equal(100 - value, "Token balance of userAccount1 is incorect");
-      expect(
-        await dogeCoin.balanceOf(bridge1.address)
-      ).to.be.equal(value, "Token balance of bridge1 is incorect");
-    });
+        await expect(
+          bridge1.depositWithPermit(depositData)
+        ).to.be.revertedWith("ERC20WithPermit: EXPIRED_SIGNATURE");
+      });
 
-    it("Signature should expire after 1h", async function() {
-      const deadline = (await time.latest()) + 60 * 60;
-      const approveSignature = await permit(
-        dogeCoin,
-        userAccount1,
-        userAccount1.address,
-        bridge1.address,
-        20,
-        deadline
-      );
-
-      depositData = {
-        ...depositData,
-        deadline: deadline,
-        approveTokenTransferSig: {
-          v: approveSignature.v,
-          r: approveSignature.r,
-          s: approveSignature.s
+      it("Should revert when value is 0", async function() {
+        depositData = {
+          ...depositData,
+          value: 0
         }
-      }
 
-      await time.increase(3601);
+        await expect(
+          bridge1.depositWithPermit(depositData)
+        ).to.be.revertedWithCustomError(bridge1, "InvalidTokenAmount");
+      });
 
-      await expect(
-        bridge1.depositWithPermit(depositData)
-      ).to.be.revertedWith("ERC20WithPermit: EXPIRED_SIGNATURE");
-    });
-
-    it("Should revert when value is 0", async function() {
-      depositData = {
-        ...depositData,
-        value: 0
-      }
-
-      await expect(
-        bridge1.depositWithPermit(depositData)
-      ).to.be.revertedWithCustomError(bridge1, "InvalidTokenAmount");
-    });
-
-    it("Should revert when spender is address(0)", async function() {
-      depositData = {
-        ...depositData,
-        value: 20,
-        spender: ethers.constants.AddressZero
-      }
-
-      await expect(
-        bridge1.depositWithPermit(depositData)
-      ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
-    });
-
-    it("Should revert when destination chainId is 0", async function() {
-      depositData = {
-        ...depositData,
-        to: {
-          _address: userAccount1.address,
-          chainId: 0
-        },
-        spender: bridge1.address,
-      }
-
-      await expect(
-        bridge1.depositWithPermit(depositData)
-      ).to.be.revertedWithCustomError(bridge1, "InvalidChainId");
-    });
-
-    it("Should revert when provided with invalid signature.v", async function() {
-      const deadline = (await time.latest()) + 60 * 60;
-      const approveSignature = await permit(
-        dogeCoin,
-        userAccount1,
-        userAccount1.address,
-        bridge1.address,
-        20,
-        deadline
-      );
-
-      depositData = {
-        ...depositData,
-        to: {
-          _address: userAccount1.address,
-          chainId: chainId
-        },
-        deadline: deadline,
-        value: 20,
-        approveTokenTransferSig: {
-          v: 17,
-          r: approveSignature.r,
-          s: approveSignature.s
+      it("Should revert when spender is address(0)", async function() {
+        depositData = {
+          ...depositData,
+          value: 20,
+          spender: ethers.constants.AddressZero
         }
-      }
 
-      await expect(
-        bridge1.depositWithPermit(depositData)
-      ).to.be.revertedWith("ERC20WithPermit: INVALID_SIGNATURE");
-    });
+        await expect(
+          bridge1.depositWithPermit(depositData)
+        ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
+      });
 
-    it("Should revert on attempt to change WrapperTokenFactory address if not owner", async function() {
-      const deadline = (await time.latest()) + 60 * 60;
-      const approveSignature = await permit(
-        dogeCoin,
-        userAccount1,
-        userAccount1.address,
-        ethers.constants.AddressZero,
-        20,
-        deadline
-      );
-
-      depositData = {
-        ...depositData,
-        to: {
-          _address: ethers.constants.AddressZero,
-          chainId: chainId
-        },
-        deadline: deadline,
-        approveTokenTransferSig: {
-          v: approveSignature.v,
-          r: approveSignature.r,
-          s: approveSignature.s
+      it("Should revert when destination chainId is 0", async function() {
+        depositData = {
+          ...depositData,
+          to: {
+            _address: userAccount1.address,
+            chainId: 0
+          },
+          spender: bridge1.address,
         }
-      }
 
-      await expect(bridge1.depositWithPermit(depositData)).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
-    });
+        await expect(
+          bridge1.depositWithPermit(depositData)
+        ).to.be.revertedWithCustomError(bridge1, "InvalidChainId");
+      });
 
-    it("Should revert on attempt to change WrapperTokenFactory address if not owner", async function() {
+      it("Should revert when provided with invalid signature.v", async function() {
+        const deadline = (await time.latest()) + 60 * 60;
+        const approveSignature = await permit(
+          dogeCoin,
+          userAccount1,
+          userAccount1.address,
+          bridge1.address,
+          20,
+          deadline
+        );
 
-      depositData = {
-        ...depositData,
-        to: {
-          _address: userAccount1.address,
-          chainId: chainId
-        },
-        token: ethers.constants.AddressZero
-      }
+        depositData = {
+          ...depositData,
+          to: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          deadline: deadline,
+          value: 20,
+          approveTokenTransferSig: {
+            v: 17,
+            r: approveSignature.r,
+            s: approveSignature.s
+          }
+        }
 
-      await expect(
-        bridge1.depositWithPermit(depositData)
-      ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
+        await expect(
+          bridge1.depositWithPermit(depositData)
+        ).to.be.revertedWith("ERC20WithPermit: INVALID_SIGNATURE");
+      });
+
+      it("Should revert on attempt to change WrapperTokenFactory address if not owner", async function() {
+        const deadline = (await time.latest()) + 60 * 60;
+        const approveSignature = await permit(
+          dogeCoin,
+          userAccount1,
+          userAccount1.address,
+          ethers.constants.AddressZero,
+          20,
+          deadline
+        );
+
+        depositData = {
+          ...depositData,
+          to: {
+            _address: ethers.constants.AddressZero,
+            chainId: chainId
+          },
+          deadline: deadline,
+          approveTokenTransferSig: {
+            v: approveSignature.v,
+            r: approveSignature.r,
+            s: approveSignature.s
+          }
+        }
+
+        await expect(bridge1.depositWithPermit(depositData)).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
+      });
+
+      it("Should revert on attempt to change WrapperTokenFactory address if not owner", async function() {
+
+        depositData = {
+          ...depositData,
+          to: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          token: ethers.constants.AddressZero
+        }
+
+        await expect(
+          bridge1.depositWithPermit(depositData)
+        ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
+      });
     });
   });
 
