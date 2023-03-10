@@ -212,7 +212,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
 
   function _deposit(DepositData calldata _depositData) internal {
     IERC20 originalToken = IERC20(_depositData.token);
-    bool success = originalToken.transferFrom(_depositData.from._address, _depositData.spender, _depositData.value);
+    bool success = originalToken.transferFrom(msg.sender, _depositData.spender, _depositData.value);
     if (!success) revert TransferFromIsUnsuccessful();
 
     OriginalToken memory originalTokenData = originalTokenByWrappedToken[_depositData.token];
