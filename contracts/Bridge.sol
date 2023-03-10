@@ -7,12 +7,10 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/draft-IERC20Permit.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./WrappedERC20.sol";
-import "./WrappedERC20Factory.sol";
 import "./IBridge.sol";
 
 contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
   string private _name;
-  address public wrappedERC20Factory;
   mapping(uint256 => mapping(address => address)) public wrappedTokenByOriginalTokenByChainId; // chainId => original token => wrapped token address
   mapping(address => OriginalToken) public originalTokenByWrappedToken; // wrapped token => original token
   mapping(address => uint256) private nonces;
@@ -73,11 +71,6 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
 
   function unpause() external onlyOwner {
     _unpause();
-  }
-
-  function setWrapperTokenFactory(address token) external onlyOwner {
-    if (token == address(0)) revert InvalidAddress();
-    wrappedERC20Factory = token;
   }
 
   function deposit(DepositData calldata _depositData)
@@ -159,10 +152,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
 
     if (_claimData.targetTokenAddress == address(0)) {
       if (wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] == address(0)) {
-        WrappedERC20 newWrappedToken = WrappedERC20Factory(wrappedERC20Factory).createToken(
-          _claimData.targetTokenName,
-          _claimData.targetTokenSymbol
-        );
+        WrappedERC20 newWrappedToken = new WrappedERC20(_claimData.targetTokenName, _claimData.targetTokenSymbol, address(this));
 
         wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] = address(newWrappedToken);
         originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(

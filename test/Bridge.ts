@@ -7,8 +7,6 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 import {
   Bridge,
   Bridge__factory,
-  WrappedERC20Factory,
-  WrappedERC20Factory__factory,
   PermitERC20,
   PermitERC20__factory
 } from "./../typechain-types";
@@ -40,19 +38,6 @@ describe("Bridge", function () {
 
     bridge2 = await bridgeFactory.deploy("Bridge2");
     await bridge2.deployed();
-
-    // Wrapped Token factories
-    const wrappedTokenFactoryFactory: WrappedERC20Factory__factory = await ethers.getContractFactory("WrappedERC20Factory");
-
-    const wrappedTokenFactory1: WrappedERC20Factory = await wrappedTokenFactoryFactory.deploy(bridge1.address);
-    const wrappedFactoryDeployTx1 = await wrappedTokenFactory1.deployed();
-
-    await bridge1.setWrapperTokenFactory(wrappedFactoryDeployTx1.address);
-
-    const wrappedTokenFactory2: WrappedERC20Factory = await wrappedTokenFactoryFactory.deploy(bridge2.address);
-    const wrappedFactoryDeployTx2 = await wrappedTokenFactory2.deployed();
-
-    await bridge2.setWrapperTokenFactory(wrappedFactoryDeployTx2.address);
 
     // Accounts
     const accounts = await ethers.getSigners();
@@ -86,19 +71,6 @@ describe("Bridge", function () {
     expect(
       (await randomCoin.balanceOf(userAccount1.address)).toString()
     ).to.be.equal("100", "UserAccount1 has incorrect balance of RandomCoin tokens");
-  });
-
-  describe("WrappedERC20Factory", function() {
-    it("Should revert on createToken call and not owner", async function() {
-      const wrappedTokenFactoryFactory: WrappedERC20Factory__factory = await ethers.getContractFactory("WrappedERC20Factory");
-
-      const wrappedTokenFactory: WrappedERC20Factory = await wrappedTokenFactoryFactory.deploy(deployer.address);
-      await wrappedTokenFactory.deployed();
-
-      await expect(
-        wrappedTokenFactory.connect(userAccount1).createToken("ElonCoin", "EC")
-      ).to.be.revertedWith("Ownable: caller is not the owner");
-    });
   });
 
   describe("Contract pausing", function() {
@@ -141,8 +113,7 @@ describe("Bridge", function () {
         userAccount1.address,
         bridge1.address,
         value,
-        deadline,
-        chainId
+        deadline
       );
 
       depositData = {
@@ -165,7 +136,7 @@ describe("Bridge", function () {
         }
       };
 
-      await expect(bridge1.depositWithPermit(depositData)).to.be.revertedWith("Pausable: paused");
+      await expect(bridge1.connect(userAccount1).depositWithPermit(depositData)).to.be.revertedWith("Pausable: paused");
     });
 
     it("Should revert on deposit calls while paused", async function() {
@@ -185,7 +156,7 @@ describe("Bridge", function () {
         }
       };
 
-      await expect(bridge1.deposit(depositData)).to.be.revertedWith("Pausable: paused");
+      await expect(bridge1.connect(userAccount1).deposit(depositData)).to.be.revertedWith("Pausable: paused");
     });
 
     it("Should revert on claim call while paused", async function() {
@@ -206,7 +177,7 @@ describe("Bridge", function () {
         deadline: ethers.constants.MaxUint256
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData);
 
       const claimSignatureSplit = {
         v: claimSignature.v,
@@ -234,16 +205,6 @@ describe("Bridge", function () {
     });
   });
 
-  describe("setWrapperTokenFactory", function() {
-    it("Should revert on attempt to change WrapperTokenFactory address if not owner", async function() {
-      await expect(bridge1.connect(userAccount2).setWrapperTokenFactory(userAccount2.address)).to.be.revertedWith("Ownable: caller is not the owner");
-    });
-
-    it("Should revert on attempt to change WrapperTokenFactory address if not owner", async function() {
-      await expect(bridge1.setWrapperTokenFactory(ethers.constants.AddressZero)).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
-    });
-  });
-
   describe("Deposit ERC20 to Bridge 1 (Lock)", function() {
     describe("deposit", function() {
       it("Should revert when from address is address(0)", async function() {
@@ -256,7 +217,7 @@ describe("Bridge", function () {
         };
 
         await expect(
-          bridge1.deposit(depositData)
+          bridge1.connect(userAccount1).deposit(depositData)
         ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
       });
 
@@ -274,7 +235,7 @@ describe("Bridge", function () {
         };
 
         await expect(
-          bridge1.deposit(depositData)
+          bridge1.connect(userAccount1).deposit(depositData)
         ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
       });
 
@@ -287,7 +248,7 @@ describe("Bridge", function () {
           }
         };
         await expect(
-          bridge1.deposit(depositData)
+          bridge1.connect(userAccount1).deposit(depositData)
         ).to.be.revertedWithCustomError(bridge1, "InvalidChainId");
       });
 
@@ -311,7 +272,7 @@ describe("Bridge", function () {
           value: value
         };
 
-        const depositTx = await bridge1.deposit(depositData);
+        const depositTx = await bridge1.connect(userAccount1).deposit(depositData);
         await depositTx.wait();
 
         expect(
@@ -340,8 +301,7 @@ describe("Bridge", function () {
           userAccount1.address,
           bridge1.address,
           value,
-          deadline,
-          chainId
+          deadline
         );
 
         depositData = {
@@ -356,7 +316,7 @@ describe("Bridge", function () {
           }
         };
 
-        const depositTx = await bridge1.depositWithPermit(depositData);
+        const depositTx = await bridge1.connect(userAccount1).depositWithPermit(depositData);
         await depositTx.wait();
 
         expect(
@@ -375,8 +335,7 @@ describe("Bridge", function () {
           userAccount1.address,
           bridge1.address,
           20,
-          deadline,
-          chainId
+          deadline
         );
 
         depositData = {
@@ -392,7 +351,7 @@ describe("Bridge", function () {
         await time.increase(3601);
 
         await expect(
-          bridge1.depositWithPermit(depositData)
+          bridge1.connect(userAccount1).depositWithPermit(depositData)
         ).to.be.revertedWith("ERC20WithPermit: EXPIRED_SIGNATURE");
       });
 
@@ -403,7 +362,7 @@ describe("Bridge", function () {
         }
 
         await expect(
-          bridge1.depositWithPermit(depositData)
+          bridge1.connect(userAccount1).depositWithPermit(depositData)
         ).to.be.revertedWithCustomError(bridge1, "InvalidTokenAmount");
       });
 
@@ -415,7 +374,7 @@ describe("Bridge", function () {
         }
 
         await expect(
-          bridge1.depositWithPermit(depositData)
+          bridge1.connect(userAccount1).depositWithPermit(depositData)
         ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
       });
 
@@ -430,7 +389,7 @@ describe("Bridge", function () {
         }
 
         await expect(
-          bridge1.depositWithPermit(depositData)
+          bridge1.connect(userAccount1).depositWithPermit(depositData)
         ).to.be.revertedWithCustomError(bridge1, "InvalidChainId");
       });
 
@@ -442,8 +401,7 @@ describe("Bridge", function () {
           userAccount1.address,
           bridge1.address,
           20,
-          deadline,
-          chainId
+          deadline
         );
 
         depositData = {
@@ -462,7 +420,7 @@ describe("Bridge", function () {
         }
 
         await expect(
-          bridge1.depositWithPermit(depositData)
+          bridge1.connect(userAccount1).depositWithPermit(depositData)
         ).to.be.revertedWith("ERC20WithPermit: INVALID_SIGNATURE");
       });
 
@@ -474,8 +432,7 @@ describe("Bridge", function () {
           userAccount1.address,
           ethers.constants.AddressZero,
           20,
-          deadline,
-          chainId
+          deadline
         );
 
         depositData = {
@@ -492,7 +449,7 @@ describe("Bridge", function () {
           }
         }
 
-        await expect(bridge1.depositWithPermit(depositData)).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
+        await expect(bridge1.connect(userAccount1).depositWithPermit(depositData)).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
       });
 
       it("Should revert on attempt to change WrapperTokenFactory address if not owner", async function() {
@@ -507,7 +464,7 @@ describe("Bridge", function () {
         }
 
         await expect(
-          bridge1.depositWithPermit(depositData)
+          bridge1.connect(userAccount1).depositWithPermit(depositData)
         ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
       });
     });
@@ -528,7 +485,7 @@ describe("Bridge", function () {
         targetTokenSymbol: "W" + (await dogeCoin.symbol())
       };
 
-      const claimSignature = await signClaimData(bridge2, deployer, claimData, chainId);
+      const claimSignature = await signClaimData(bridge2, deployer, claimData);
 
       const claimSignatureSplit = {
         v: claimSignature.v,
@@ -550,7 +507,7 @@ describe("Bridge", function () {
         }
       };
 
-      const claimSignature = await signClaimData(bridge2, deployer, claimData, chainId);
+      const claimSignature = await signClaimData(bridge2, deployer, claimData);
 
       firstClaimSignatureSplit = {
         v: claimSignature.v,
@@ -584,7 +541,7 @@ describe("Bridge", function () {
     });
 
     it("Should not deploy new WrappedToken and mint from the old one", async function() {
-      const claimSignature = await signClaimData(bridge2, deployer, claimData, chainId);
+      const claimSignature = await signClaimData(bridge2, deployer, claimData);
       const claimSignatureSplit = {
         v: claimSignature.v,
         r: claimSignature.r,
@@ -623,8 +580,7 @@ describe("Bridge", function () {
         userAccount1.address,
         bridge2.address,
         40,
-        deadline,
-        chainId
+        deadline
       );
 
       depositData = {
@@ -648,7 +604,7 @@ describe("Bridge", function () {
       };
 
       await expect(
-        bridge2.depositWithPermit(depositData)
+        bridge2.connect(userAccount1).depositWithPermit(depositData)
       ).to.be.revertedWithCustomError(bridge2, "IncorrectDestinationChain");
     });
 
@@ -665,7 +621,7 @@ describe("Bridge", function () {
 
       const initialTotalSupply: BigNumber = await wrappedDogeCoinToken.totalSupply();
 
-      const depositTx = await bridge2.depositWithPermit(depositData);
+      const depositTx = await bridge2.connect(userAccount1).depositWithPermit(depositData);
       await depositTx.wait();
 
       const totalSupplyAfterTx: BigNumber = await wrappedDogeCoinToken.totalSupply();
@@ -705,7 +661,7 @@ describe("Bridge", function () {
         deadline: deadline
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData);
 
       await expect(
         bridge1.connect(userAccount1).claim(claimData, claimSignature)
@@ -721,7 +677,7 @@ describe("Bridge", function () {
         }
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData);
 
       await expect(
         bridge1.connect(userAccount1).claim(claimData, claimSignature)
@@ -741,7 +697,7 @@ describe("Bridge", function () {
         }
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData);
 
       await expect(
         bridge1.connect(userAccount1).claim(claimData, claimSignature)
@@ -757,7 +713,7 @@ describe("Bridge", function () {
         }
       };
 
-      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData);
       const customSignature = {
         ...claimSignature,
         v: 17
@@ -769,7 +725,7 @@ describe("Bridge", function () {
     });
 
     it("Release original ERC20 token", async function() {
-      const claimSignature = await signClaimData(bridge1, deployer, claimData, chainId);
+      const claimSignature = await signClaimData(bridge1, deployer, claimData);
 
       expect(dogeCoin.address).to.be.equal(
         claimData.targetTokenAddress,

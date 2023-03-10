@@ -78,8 +78,6 @@ interface IBridge {
     address sourceTokenAddress
   );
 
-  function setWrapperTokenFactory(address token) external;
-
   function deposit(DepositData calldata _depositData) external;
 
   function depositWithPermit(DepositData calldata _depositData) external;
