@@ -5,11 +5,12 @@ import "@openzeppelin/contracts/interfaces/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/draft-IERC20Permit.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./WrappedERC20.sol";
 import "./WrappedERC20Factory.sol";
 import "./IBridge.sol";
 
-contract Bridge is Ownable, Pausable, IBridge {
+contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
   string private _name;
   address public wrappedERC20Factory;
   mapping(uint256 => mapping(address => address)) public wrappedTokenByOriginalTokenByChainId; // chainId => original token => wrapped token address
@@ -33,6 +34,8 @@ contract Bridge is Ownable, Pausable, IBridge {
   error IncorrectDestinationChain();
   error CurrentAndProvidedChainsDoNotMatch();
   error AddressIsNotTheOwner();
+  error TransferFromIsUnsuccessful();
+  error TransferIsUnsuccessful();
 
   modifier validateTransfer(address from, address to, address token, uint256 value) {
     if (from == address(0)) revert InvalidAddress();
@@ -80,6 +83,7 @@ contract Bridge is Ownable, Pausable, IBridge {
   function deposit(DepositData calldata _depositData)
     external
     whenNotPaused
+    nonReentrant
     validateTransfer(
       _depositData.from._address,
       _depositData.to._address,
@@ -97,6 +101,7 @@ contract Bridge is Ownable, Pausable, IBridge {
   function depositWithPermit(DepositData calldata _depositData)
     external
     whenNotPaused
+    nonReentrant
     validateTransfer(
       _depositData.from._address,
       _depositData.to._address,
@@ -124,6 +129,7 @@ contract Bridge is Ownable, Pausable, IBridge {
   function claim(ClaimData calldata _claimData, Signature calldata claimSig)
     external
     whenNotPaused
+    nonReentrant
     validateTransfer(
       _claimData.from._address,
       _claimData.to._address,
@@ -171,7 +177,8 @@ contract Bridge is Ownable, Pausable, IBridge {
       emitMintWrappedToken(_claimData, wrappedToken);
     } else {
       IERC20 originalToken = IERC20(_claimData.targetTokenAddress);
-      originalToken.transfer(_claimData.to._address, _claimData.value);
+      bool success = originalToken.transfer(_claimData.to._address, _claimData.value);
+      if (!success) revert TransferIsUnsuccessful();
 
       emitReleaseOriginalToken(_claimData);
     }
@@ -205,7 +212,8 @@ contract Bridge is Ownable, Pausable, IBridge {
 
   function _deposit(DepositData calldata _depositData) internal {
     IERC20 originalToken = IERC20(_depositData.token);
-    originalToken.transferFrom(_depositData.from._address, _depositData.spender, _depositData.value);
+    bool success = originalToken.transferFrom(_depositData.from._address, _depositData.spender, _depositData.value);
+    if (!success) revert TransferFromIsUnsuccessful();
 
     OriginalToken memory originalTokenData = originalTokenByWrappedToken[_depositData.token];
     bool isWrappedToken = originalTokenData.tokenAddress != address(0);
