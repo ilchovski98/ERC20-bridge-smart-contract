@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/draft-IERC20Permit.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "./WrappedERC20.sol";
+import "./PermitERC20.sol";
 import "./IBridge.sol";
 
 contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
@@ -199,8 +199,8 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     bool isWrappedToken = originalTokenData.tokenAddress != address(0);
 
     if (isWrappedToken) {
-      if (block.chainid != _depositData.to.chainId) revert DestinationChainCantBeCurrentChain();
-      WrappedERC20(_depositData.token).burn(_depositData.value);
+      // if (block.chainid == _depositData.to.chainId) revert DestinationChainCantBeCurrentChain();
+      PermitERC20(_depositData.token).burn(_depositData.value);
       emitBurnWrappedToken(_depositData, originalTokenData.tokenAddress, originalTokenData.originChainId);
     } else {
       emitLockOriginalToken(_depositData);
@@ -213,7 +213,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
 
     if (_claimData.targetTokenAddress == address(0)) {
       if (wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] == address(0)) {
-        WrappedERC20 newWrappedToken = new WrappedERC20(_claimData.targetTokenName, _claimData.targetTokenSymbol, address(this));
+        PermitERC20 newWrappedToken = new PermitERC20(_claimData.targetTokenName, _claimData.targetTokenSymbol);
 
         wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] = address(newWrappedToken);
         originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(
@@ -223,7 +223,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
       }
 
       address wrappedToken = wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress];
-      WrappedERC20(wrappedToken).mint(_claimData.to._address, _claimData.value);
+      PermitERC20(wrappedToken).mint(_claimData.to._address, _claimData.value);
 
       emitMintWrappedToken(_claimData, wrappedToken);
     } else {
