@@ -26,11 +26,12 @@ interface IBridge {
     User from;
     User to;
     uint256 value;
-    address originalToken;
-    address targetTokenAddress;
-    string targetTokenName;
-    string targetTokenSymbol;
-    uint256 deadline;
+    OriginalToken token; // used to indicate which is the original ERC20 (info that must be stored on all bridges)
+    address depositTxSourceToken; // the deposited token address that triggered the transfer (WERC20/ERC20)
+    address targetTokenAddress; // if the operator populates this address then the token will be released else it indicates that the claimed token is a wrapped one
+    string targetTokenName; // provided by operator to name new wrapped token
+    string targetTokenSymbol; // provided by operator to name new wrapped token
+    uint256 deadline; // provided by operator in case we want to have a deadline (most of the times there will be none)
   }
 
   struct Signature {
@@ -45,7 +46,7 @@ interface IBridge {
     address indexed sender,
     address indexed recepient,
     uint256 sourceChainId,
-    uint256 destinationChainId
+    uint256 toChainId
   );
 
   event BurnWrappedToken(
@@ -54,8 +55,9 @@ interface IBridge {
     address sender,
     address recepient,
     uint256 sourceChainId,
-    uint256 destinationChainId,
-    address destinationTokenAddress
+    uint256 toChainId,
+    address originalTokenAddress,
+    uint256 originalTokenChainId
   );
 
   event ReleaseOriginalToken(
@@ -75,10 +77,9 @@ interface IBridge {
     address recepient,
     uint256 sourceChainId,
     uint256 toChainId,
-    address sourceTokenAddress
+    address originalTokenAddress,
+    uint256 originalChainId
   );
-
-  function setWrapperTokenFactory(address token) external;
 
   function deposit(DepositData calldata _depositData) external;
 

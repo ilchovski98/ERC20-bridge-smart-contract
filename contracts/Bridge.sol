@@ -5,25 +5,26 @@ import "@openzeppelin/contracts/interfaces/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/draft-IERC20Permit.sol";
-import "./WrappedERC20.sol";
-import "./WrappedERC20Factory.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "./PermitERC20.sol";
 import "./IBridge.sol";
 
-contract Bridge is Ownable, Pausable, IBridge {
+contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
   string private _name;
-  address public wrappedERC20Factory;
   mapping(uint256 => mapping(address => address)) public wrappedTokenByOriginalTokenByChainId; // chainId => original token => wrapped token address
   mapping(address => OriginalToken) public originalTokenByWrappedToken; // wrapped token => original token
   mapping(address => uint256) private nonces;
 
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
-  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIM_TYPEHASH = 0x9bbf21d42baedc93dc6b9adbef5fb381596f70422c1ca3ce988486b9c99d2145;
-  // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIMDATA_TYPEHASH = 0xeb58e95b67ff6c8b18df6176f42c5e3697221b49964ec25b8d18806cb060b240;
+  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)OriginalToken(address tokenAddress,uint256 originChainId)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIM_TYPEHASH = 0x92f0142b6bb6777332444e4f035b692e77419f18a5ee2cd84f10c07c47e1474f;
+  // keccak256("ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)OriginalToken(address tokenAddress,uint256 originChainId)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIMDATA_TYPEHASH = 0xe896384c688095ca54bad7d2e7b660c741bd270344665ff5a1e334e0e0c9f2df;
   // keccak256("User(address _address,uint256 chainId)")
   bytes32 public constant USER_TYPEHASH = 0x265b4089f698d180c71c21e5c5a755d17cec5ca245cab57cf1f26696020008b6;
+  // keccak256("OriginalToken(address tokenAddress,uint256 originChainId)");
+  bytes32 public constant ORIGINAL_TOKEN_TYPEHASH = 0xa24126880bed04190203d04ec4d6365915e96e5977ee3b881ec3cfafa2b71c49;
   // keccak256("Signature(uint8 v,bytes32 r,bytes32 s)")
   bytes32 public constant SIGNATURE_TYPEHASH = 0xcea59b5eccb60256d918b7a2e778f6161148c37e6dada57c32e20db10c50b631;
 
@@ -31,13 +32,17 @@ contract Bridge is Ownable, Pausable, IBridge {
   error InvalidChainId();
   error InvalidTokenAmount();
   error IncorrectDestinationChain();
+  error DestinationChainCantBeCurrentChain();
   error CurrentAndProvidedChainsDoNotMatch();
   error AddressIsNotTheOwner();
+  error TransferFromIsUnsuccessful();
+  error TransferIsUnsuccessful();
+  error FromAndSenderMustMatch();
 
-  modifier validateTransfer(address from, address to, address token, uint256 value) {
+  modifier validateTransfer(address from, address to, address originalToken, uint256 value) {
     if (from == address(0)) revert InvalidAddress();
     if (to == address(0)) revert InvalidAddress();
-    if (token == address(0)) revert InvalidAddress();
+    if (originalToken == address(0)) revert InvalidAddress();
     if (value == 0) revert InvalidTokenAmount();
     _;
   }
@@ -72,14 +77,10 @@ contract Bridge is Ownable, Pausable, IBridge {
     _unpause();
   }
 
-  function setWrapperTokenFactory(address token) external onlyOwner {
-    if (token == address(0)) revert InvalidAddress();
-    wrappedERC20Factory = token;
-  }
-
   function deposit(DepositData calldata _depositData)
     external
     whenNotPaused
+    nonReentrant
     validateTransfer(
       _depositData.from._address,
       _depositData.to._address,
@@ -97,6 +98,7 @@ contract Bridge is Ownable, Pausable, IBridge {
   function depositWithPermit(DepositData calldata _depositData)
     external
     whenNotPaused
+    nonReentrant
     validateTransfer(
       _depositData.from._address,
       _depositData.to._address,
@@ -124,10 +126,11 @@ contract Bridge is Ownable, Pausable, IBridge {
   function claim(ClaimData calldata _claimData, Signature calldata claimSig)
     external
     whenNotPaused
+    nonReentrant
     validateTransfer(
       _claimData.from._address,
       _claimData.to._address,
-      _claimData.originalToken,
+      _claimData.token.tokenAddress,
       _claimData.value
     )
   {
@@ -148,33 +151,7 @@ contract Bridge is Ownable, Pausable, IBridge {
     if (recoveredAddress == address(0)) revert InvalidAddress();
     if (recoveredAddress != owner()) revert AddressIsNotTheOwner();
 
-    if (_claimData.from.chainId == 0) revert InvalidChainId();
-    if (_claimData.to.chainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
-
-    if (_claimData.targetTokenAddress == address(0)) {
-      if (wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] == address(0)) {
-        WrappedERC20 newWrappedToken = WrappedERC20Factory(wrappedERC20Factory).createToken(
-          _claimData.targetTokenName,
-          _claimData.targetTokenSymbol
-        );
-
-        wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] = address(newWrappedToken);
-        originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(
-          _claimData.originalToken,
-          _claimData.from.chainId
-        );
-      }
-
-      address wrappedToken = wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken];
-      WrappedERC20(wrappedToken).mint(_claimData.to._address, _claimData.value);
-
-      emitMintWrappedToken(_claimData, wrappedToken);
-    } else {
-      IERC20 originalToken = IERC20(_claimData.targetTokenAddress);
-      originalToken.transfer(_claimData.to._address, _claimData.value);
-
-      emitReleaseOriginalToken(_claimData);
-    }
+    _claim(_claimData);
   }
 
   function name() public view returns (string memory) {
@@ -189,13 +166,22 @@ contract Bridge is Ownable, Pausable, IBridge {
     ));
   }
 
+  function hash(OriginalToken calldata token) internal pure returns (bytes32) {
+    return keccak256(abi.encode(
+      ORIGINAL_TOKEN_TYPEHASH,
+      token.tokenAddress,
+      token.originChainId
+    ));
+  }
+
   function hash(ClaimData calldata _claimData) internal pure returns (bytes32) {
     return keccak256(abi.encode(
       CLAIMDATA_TYPEHASH,
       hash(_claimData.from),
       hash(_claimData.to),
       _claimData.value,
-      _claimData.originalToken,
+      hash(_claimData.token),
+      _claimData.depositTxSourceToken,
       _claimData.targetTokenAddress,
       keccak256(bytes(_claimData.targetTokenName)),
       keccak256(bytes(_claimData.targetTokenSymbol)),
@@ -204,18 +190,48 @@ contract Bridge is Ownable, Pausable, IBridge {
   }
 
   function _deposit(DepositData calldata _depositData) internal {
+    if (msg.sender != _depositData.from._address) revert FromAndSenderMustMatch();
     IERC20 originalToken = IERC20(_depositData.token);
-    originalToken.transferFrom(_depositData.from._address, _depositData.spender, _depositData.value);
+    bool success = originalToken.transferFrom(msg.sender, _depositData.spender, _depositData.value);
+    if (!success) revert TransferFromIsUnsuccessful();
 
     OriginalToken memory originalTokenData = originalTokenByWrappedToken[_depositData.token];
     bool isWrappedToken = originalTokenData.tokenAddress != address(0);
 
     if (isWrappedToken) {
-      if (originalTokenData.originChainId != _depositData.to.chainId) revert IncorrectDestinationChain();
-      WrappedERC20(_depositData.token).burn(_depositData.value);
-      emitBurnWrappedToken(_depositData, originalTokenData.tokenAddress);
+      // if (block.chainid == _depositData.to.chainId) revert DestinationChainCantBeCurrentChain();
+      PermitERC20(_depositData.token).burn(_depositData.value);
+      emitBurnWrappedToken(_depositData, originalTokenData.tokenAddress, originalTokenData.originChainId);
     } else {
       emitLockOriginalToken(_depositData);
+    }
+  }
+
+  function _claim(ClaimData calldata _claimData) internal {
+    if (_claimData.from.chainId == 0) revert InvalidChainId();
+    if (_claimData.to.chainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
+
+    if (_claimData.targetTokenAddress == address(0)) {
+      if (wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] == address(0)) {
+        PermitERC20 newWrappedToken = new PermitERC20(_claimData.targetTokenName, _claimData.targetTokenSymbol);
+
+        wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] = address(newWrappedToken);
+        originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(
+          _claimData.token.tokenAddress,
+          _claimData.token.originChainId
+        );
+      }
+
+      address wrappedToken = wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress];
+      PermitERC20(wrappedToken).mint(_claimData.to._address, _claimData.value);
+
+      emitMintWrappedToken(_claimData, wrappedToken);
+    } else {
+      IERC20 originalToken = IERC20(_claimData.targetTokenAddress);
+      bool success = originalToken.transfer(_claimData.to._address, _claimData.value);
+      if (!success) revert TransferIsUnsuccessful();
+
+      emitReleaseOriginalToken(_claimData);
     }
   }
 
@@ -227,7 +243,7 @@ contract Bridge is Ownable, Pausable, IBridge {
       _claimData.to._address,
       _claimData.from.chainId,
       _claimData.to.chainId,
-      _claimData.originalToken
+      _claimData.depositTxSourceToken
     );
   }
 
@@ -239,11 +255,12 @@ contract Bridge is Ownable, Pausable, IBridge {
         _claimData.to._address,
         _claimData.from.chainId,
         _claimData.to.chainId,
-        _claimData.originalToken
+        _claimData.token.tokenAddress,
+        _claimData.token.originChainId
     );
   }
 
-  function emitBurnWrappedToken(DepositData calldata _depositData, address originalTokenAddress) internal {
+  function emitBurnWrappedToken(DepositData calldata _depositData, address originalTokenAddress, uint256 originalTokenChainId) internal {
     emit BurnWrappedToken(
       _depositData.token,
       _depositData.value,
@@ -251,7 +268,8 @@ contract Bridge is Ownable, Pausable, IBridge {
       _depositData.to._address,
       block.chainid,
       _depositData.to.chainId,
-      originalTokenAddress
+      originalTokenAddress,
+      originalTokenChainId
     );
   }
 
