@@ -30,6 +30,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
   error InvalidChainId();
   error InvalidTokenAmount();
   error IncorrectDestinationChain();
+  error DestinationChainCantBeCurrentChain();
   error CurrentAndProvidedChainsDoNotMatch();
   error AddressIsNotTheOwner();
   error TransferFromIsUnsuccessful();
@@ -147,31 +148,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     if (recoveredAddress == address(0)) revert InvalidAddress();
     if (recoveredAddress != owner()) revert AddressIsNotTheOwner();
 
-    if (_claimData.from.chainId == 0) revert InvalidChainId();
-    if (_claimData.to.chainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
-
-    if (_claimData.targetTokenAddress == address(0)) {
-      if (wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] == address(0)) {
-        WrappedERC20 newWrappedToken = new WrappedERC20(_claimData.targetTokenName, _claimData.targetTokenSymbol, address(this));
-
-        wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] = address(newWrappedToken);
-        originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(
-          _claimData.originalToken,
-          _claimData.from.chainId
-        );
-      }
-
-      address wrappedToken = wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken];
-      WrappedERC20(wrappedToken).mint(_claimData.to._address, _claimData.value);
-
-      emitMintWrappedToken(_claimData, wrappedToken);
-    } else {
-      IERC20 originalToken = IERC20(_claimData.targetTokenAddress);
-      bool success = originalToken.transfer(_claimData.to._address, _claimData.value);
-      if (!success) revert TransferIsUnsuccessful();
-
-      emitReleaseOriginalToken(_claimData);
-    }
+    _claim(_claimData);
   }
 
   function name() public view returns (string memory) {
@@ -209,11 +186,39 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     bool isWrappedToken = originalTokenData.tokenAddress != address(0);
 
     if (isWrappedToken) {
-      if (originalTokenData.originChainId != _depositData.to.chainId) revert IncorrectDestinationChain();
+      if (block.chainid != _depositData.to.chainId) revert DestinationChainCantBeCurrentChain();
       WrappedERC20(_depositData.token).burn(_depositData.value);
-      emitBurnWrappedToken(_depositData, originalTokenData.tokenAddress);
+      emitBurnWrappedToken(_depositData, originalTokenData.tokenAddress, originalTokenData.originChainId);
     } else {
       emitLockOriginalToken(_depositData);
+    }
+  }
+
+  function _claim(ClaimData calldata _claimData) internal {
+    if (_claimData.from.chainId == 0) revert InvalidChainId();
+    if (_claimData.to.chainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
+
+    if (_claimData.targetTokenAddress == address(0)) {
+      if (wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] == address(0)) {
+        WrappedERC20 newWrappedToken = new WrappedERC20(_claimData.targetTokenName, _claimData.targetTokenSymbol, address(this));
+
+        wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] = address(newWrappedToken);
+        originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(
+          _claimData.originalToken,
+          _claimData.from.chainId
+        );
+      }
+
+      address wrappedToken = wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken];
+      WrappedERC20(wrappedToken).mint(_claimData.to._address, _claimData.value);
+
+      emitMintWrappedToken(_claimData, wrappedToken);
+    } else {
+      IERC20 originalToken = IERC20(_claimData.targetTokenAddress);
+      bool success = originalToken.transfer(_claimData.to._address, _claimData.value);
+      if (!success) revert TransferIsUnsuccessful();
+
+      emitReleaseOriginalToken(_claimData);
     }
   }
 
@@ -241,7 +246,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     );
   }
 
-  function emitBurnWrappedToken(DepositData calldata _depositData, address originalTokenAddress) internal {
+  function emitBurnWrappedToken(DepositData calldata _depositData, address originalTokenAddress, uint256 originalTokenChainId) internal {
     emit BurnWrappedToken(
       _depositData.token,
       _depositData.value,
@@ -249,7 +254,8 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
       _depositData.to._address,
       block.chainid,
       _depositData.to.chainId,
-      originalTokenAddress
+      originalTokenAddress,
+      originalTokenChainId
     );
   }
 

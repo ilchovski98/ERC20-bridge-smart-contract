@@ -55,7 +55,8 @@ interface IBridge {
     address recepient,
     uint256 sourceChainId,
     uint256 destinationChainId,
-    address destinationTokenAddress
+    address originalTokenAddress,
+    uint256 originalTokenChainId
   );
 
   event ReleaseOriginalToken(

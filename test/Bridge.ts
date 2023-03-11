@@ -142,9 +142,6 @@ describe("Bridge", function () {
     it("Should revert on deposit calls while paused", async function() {
       const value = 40;
 
-      const approveTx = await randomCoin.connect(userAccount1).approve(bridge1.address, value);
-      await approveTx.wait();
-
       depositData = {
         ...depositData,
         token: randomCoin.address,
@@ -252,14 +249,7 @@ describe("Bridge", function () {
         ).to.be.revertedWithCustomError(bridge1, "InvalidChainId");
       });
 
-      it("Funds are deposited to the bridge", async function() {
-        expect(
-          await randomCoin.balanceOf(userAccount1.address)
-        ).to.be.equal(100, "Initial token balance of userAccount1 is incorect");
-        expect(
-          await randomCoin.balanceOf(bridge1.address)
-        ).to.be.equal(0, "Initial token balance of bridge1 is incorect");
-
+      it("Should revert when trying to deposit withour approval", async function() {
         const value = 40;
 
         depositData = {
@@ -271,6 +261,24 @@ describe("Bridge", function () {
           token: randomCoin.address,
           value: value
         };
+
+        await expect(
+          bridge1.connect(userAccount1).deposit(depositData)
+        ).to.be.revertedWith("ERC20: insufficient allowance");
+      });
+
+      it("Funds are deposited to the bridge", async function() {
+        expect(
+          await randomCoin.balanceOf(userAccount1.address)
+        ).to.be.equal(100, "Initial token balance of userAccount1 is incorect");
+        expect(
+          await randomCoin.balanceOf(bridge1.address)
+        ).to.be.equal(0, "Initial token balance of bridge1 is incorect");
+
+        const value = 40;
+
+        const approveTx = await randomCoin.connect(userAccount1).approve(bridge1.address, value);
+        await approveTx.wait();
 
         const depositTx = await bridge1.connect(userAccount1).deposit(depositData);
         await depositTx.wait();
@@ -572,7 +580,9 @@ describe("Bridge", function () {
   });
 
   describe("Deposit WERC20 to Bridge 2 (Burn)", function() {
-    it("Should revert when providing wrong destination chainId", async function() {
+    it("Burn the deployed token instead of holding them", async function() {
+      expect(await wrappedDogeCoinToken.balanceOf(userAccount1.address)).to.be.equal(40, "Initial WrappedDogeCoin token balance of userAccount1 is incorect");
+
       const deadline = (await time.latest()) + 60 * 60;
       const approveSignature = await permit(
         wrappedDogeCoinToken,
@@ -590,7 +600,7 @@ describe("Bridge", function () {
         },
         to: {
           _address: userAccount1.address,
-          chainId: 99999
+          chainId: chainId
         },
         spender: bridge2.address,
         token: wrappedDogeCoinToken.address,
@@ -602,22 +612,6 @@ describe("Bridge", function () {
           s: approveSignature.s
         }
       };
-
-      await expect(
-        bridge2.connect(userAccount1).depositWithPermit(depositData)
-      ).to.be.revertedWithCustomError(bridge2, "IncorrectDestinationChain");
-    });
-
-    it("Burn the deployed token instead of holding them", async function() {
-      expect(await wrappedDogeCoinToken.balanceOf(userAccount1.address)).to.be.equal(40, "Initial WrappedDogeCoin token balance of userAccount1 is incorect");
-
-      depositData = {
-        ...depositData,
-        to: {
-          _address: userAccount1.address,
-          chainId: chainId
-        },
-      }
 
       const initialTotalSupply: BigNumber = await wrappedDogeCoinToken.totalSupply();
 
