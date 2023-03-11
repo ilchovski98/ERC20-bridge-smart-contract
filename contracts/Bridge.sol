@@ -17,6 +17,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
 
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
+  // Todo
   // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
   bytes32 public constant CLAIM_TYPEHASH = 0x9bbf21d42baedc93dc6b9adbef5fb381596f70422c1ca3ce988486b9c99d2145;
   // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
@@ -124,10 +125,12 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     external
     whenNotPaused
     nonReentrant
+    // Todo
     validateTransfer(
       _claimData.from._address,
       _claimData.to._address,
-      _claimData.originalToken,
+      _claimData.token.tokenAddress,
+      _claimData.token.originChainId,
       _claimData.value
     )
   {
@@ -163,6 +166,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     ));
   }
 
+  // Todo
   function hash(ClaimData calldata _claimData) internal pure returns (bytes32) {
     return keccak256(abi.encode(
       CLAIMDATA_TYPEHASH,
@@ -199,17 +203,17 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     if (_claimData.to.chainId != block.chainid) revert CurrentAndProvidedChainsDoNotMatch();
 
     if (_claimData.targetTokenAddress == address(0)) {
-      if (wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] == address(0)) {
+      if (wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] == address(0)) {
         WrappedERC20 newWrappedToken = new WrappedERC20(_claimData.targetTokenName, _claimData.targetTokenSymbol, address(this));
 
-        wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken] = address(newWrappedToken);
+        wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] = address(newWrappedToken);
         originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(
           _claimData.originalToken,
           _claimData.from.chainId
         );
       }
 
-      address wrappedToken = wrappedTokenByOriginalTokenByChainId[_claimData.from.chainId][_claimData.originalToken];
+      address wrappedToken = wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress];
       WrappedERC20(wrappedToken).mint(_claimData.to._address, _claimData.value);
 
       emitMintWrappedToken(_claimData, wrappedToken);
@@ -242,7 +246,8 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
         _claimData.to._address,
         _claimData.from.chainId,
         _claimData.to.chainId,
-        _claimData.originalToken
+        _claimData.token.tokenAddress,
+        _claimData.token.originChainId
     );
   }
 

@@ -26,7 +26,7 @@ interface IBridge {
     User from;
     User to;
     uint256 value;
-    address originalToken;
+    OriginalToken token;
     address targetTokenAddress;
     string targetTokenName;
     string targetTokenSymbol;
@@ -76,7 +76,8 @@ interface IBridge {
     address recepient,
     uint256 sourceChainId,
     uint256 toChainId,
-    address sourceTokenAddress
+    address originalTokenAddress,
+    uint256 originalChainId
   );
 
   function deposit(DepositData calldata _depositData) external;

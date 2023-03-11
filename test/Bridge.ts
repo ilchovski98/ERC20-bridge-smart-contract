@@ -249,7 +249,7 @@ describe("Bridge", function () {
         ).to.be.revertedWithCustomError(bridge1, "InvalidChainId");
       });
 
-      it("Should revert when trying to deposit withour approval", async function() {
+      it("Should revert when trying to deposit without approval", async function() {
         const value = 40;
 
         depositData = {
@@ -289,6 +289,41 @@ describe("Bridge", function () {
         expect(
           await randomCoin.balanceOf(bridge1.address)
         ).to.be.equal(value, "Token balance of bridge1 is incorect");
+      });
+    });
+
+    describe("Send WERC20 from Bridge 2 to Bridge 3, then to Bridge 1 and release original ERC20 (3 way Bridge)", function() {
+      it("Claim WERC20 on Bridge 2 (mint)", async function() {
+        claimData = {
+          from: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          to: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          value: 40,
+          originalToken: randomCoin.address,
+          targetTokenAddress: ethers.constants.AddressZero,
+          targetTokenName: "Wrapped " + (await randomCoin.name()),
+          targetTokenSymbol: "W" + (await randomCoin.symbol()),
+          deadline: ethers.constants.MaxUint256
+        };
+
+        const claimSignature = await signClaimData(bridge2, deployer, claimData);
+
+        const claimSignatureSplit = {
+          v: claimSignature.v,
+          r: claimSignature.r,
+          s: claimSignature.s
+        }
+
+        const claimTx = await bridge1.claim(claimData, claimSignatureSplit);
+        await claimTx.wait();
+
+        // Todo check
+        // bridge2.wrappedTokenByOriginalTokenByChainId
       });
     });
 
@@ -479,7 +514,7 @@ describe("Bridge", function () {
   });
 
   describe("Claim WERC20 from Bridge 2 (Mint)", function() {
-    it("Deploy WrappedToken and mint tokens to the recepient", async function() {
+    it("Should revert if from chain is 0", async function() {
       claimData = {
         ...claimData,
         from: {
