@@ -17,13 +17,14 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
 
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
-  // Todo
-  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIM_TYPEHASH = 0x9bbf21d42baedc93dc6b9adbef5fb381596f70422c1ca3ce988486b9c99d2145;
-  // keccak256("ClaimData(User from,User to,uint256 value,address originalToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIMDATA_TYPEHASH = 0xeb58e95b67ff6c8b18df6176f42c5e3697221b49964ec25b8d18806cb060b240;
+  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)OriginalToken(address tokenAddress,uint256 originChainId)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIM_TYPEHASH = 0x92f0142b6bb6777332444e4f035b692e77419f18a5ee2cd84f10c07c47e1474f;
+  // keccak256("ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)OriginalToken(address tokenAddress,uint256 originChainId)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIMDATA_TYPEHASH = 0xe896384c688095ca54bad7d2e7b660c741bd270344665ff5a1e334e0e0c9f2df;
   // keccak256("User(address _address,uint256 chainId)")
   bytes32 public constant USER_TYPEHASH = 0x265b4089f698d180c71c21e5c5a755d17cec5ca245cab57cf1f26696020008b6;
+  // keccak256("OriginalToken(address tokenAddress,uint256 originChainId)");
+  bytes32 public constant ORIGINAL_TOKEN_TYPEHASH = 0xa24126880bed04190203d04ec4d6365915e96e5977ee3b881ec3cfafa2b71c49;
   // keccak256("Signature(uint8 v,bytes32 r,bytes32 s)")
   bytes32 public constant SIGNATURE_TYPEHASH = 0xcea59b5eccb60256d918b7a2e778f6161148c37e6dada57c32e20db10c50b631;
 
@@ -37,10 +38,10 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
   error TransferFromIsUnsuccessful();
   error TransferIsUnsuccessful();
 
-  modifier validateTransfer(address from, address to, address token, uint256 value) {
+  modifier validateTransfer(address from, address to, address originalToken, uint256 value) {
     if (from == address(0)) revert InvalidAddress();
     if (to == address(0)) revert InvalidAddress();
-    if (token == address(0)) revert InvalidAddress();
+    if (originalToken == address(0)) revert InvalidAddress();
     if (value == 0) revert InvalidTokenAmount();
     _;
   }
@@ -125,12 +126,10 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     external
     whenNotPaused
     nonReentrant
-    // Todo
     validateTransfer(
       _claimData.from._address,
       _claimData.to._address,
       _claimData.token.tokenAddress,
-      _claimData.token.originChainId,
       _claimData.value
     )
   {
@@ -166,14 +165,22 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     ));
   }
 
-  // Todo
+  function hash(OriginalToken calldata token) internal pure returns (bytes32) {
+    return keccak256(abi.encode(
+      ORIGINAL_TOKEN_TYPEHASH,
+      token.tokenAddress,
+      token.originChainId
+    ));
+  }
+
   function hash(ClaimData calldata _claimData) internal pure returns (bytes32) {
     return keccak256(abi.encode(
       CLAIMDATA_TYPEHASH,
       hash(_claimData.from),
       hash(_claimData.to),
       _claimData.value,
-      _claimData.originalToken,
+      hash(_claimData.token),
+      _claimData.depositTxSourceToken,
       _claimData.targetTokenAddress,
       keccak256(bytes(_claimData.targetTokenName)),
       keccak256(bytes(_claimData.targetTokenSymbol)),
@@ -208,8 +215,8 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
 
         wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] = address(newWrappedToken);
         originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(
-          _claimData.originalToken,
-          _claimData.from.chainId
+          _claimData.token.tokenAddress,
+          _claimData.token.originChainId
         );
       }
 
@@ -234,7 +241,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
       _claimData.to._address,
       _claimData.from.chainId,
       _claimData.to.chainId,
-      _claimData.originalToken
+      _claimData.depositTxSourceToken
     );
   }
 

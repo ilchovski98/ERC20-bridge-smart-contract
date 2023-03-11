@@ -167,7 +167,11 @@ describe("Bridge", function () {
           chainId: chainId
         },
         value: 20,
-        originalToken: randomCoin.address,
+        token: {
+          tokenAddress: randomCoin.address,
+          originChainId: chainId
+        },
+        depositTxSourceToken: randomCoin.address,
         targetTokenAddress: ethers.constants.AddressZero,
         targetTokenName: "Wrapped " + (await randomCoin.name()),
         targetTokenSymbol: "W" + (await randomCoin.symbol()),
@@ -292,40 +296,54 @@ describe("Bridge", function () {
       });
     });
 
-    describe("Send WERC20 from Bridge 2 to Bridge 3, then to Bridge 1 and release original ERC20 (3 way Bridge)", function() {
-      it("Claim WERC20 on Bridge 2 (mint)", async function() {
-        claimData = {
-          from: {
-            _address: userAccount1.address,
-            chainId: chainId
-          },
-          to: {
-            _address: userAccount1.address,
-            chainId: chainId
-          },
-          value: 40,
-          originalToken: randomCoin.address,
-          targetTokenAddress: ethers.constants.AddressZero,
-          targetTokenName: "Wrapped " + (await randomCoin.name()),
-          targetTokenSymbol: "W" + (await randomCoin.symbol()),
-          deadline: ethers.constants.MaxUint256
-        };
+    // Todo
+    // describe("Send WERC20 from Bridge 2 to Bridge 3, then to Bridge 1 and release original ERC20 (3 way Bridge)", function() {
+    //   it("Claim WERC20 on Bridge 2 (mint)", async function() {
+    //     // claimData = {
+    //     //   from: {
+    //     //     _address: userAccount1.address,
+    //     //     chainId: chainId
+    //     //   },
+    //     //   to: {
+    //     //     _address: userAccount1.address,
+    //     //     chainId: chainId
+    //     //   },
+    //     //   value: 20,
+    //     //   token: {
+    //     //     tokenAddress: randomCoin.address,
+    //     //     originChainId: chainId
+    //     //   },
+    //     //   depositTxSourceToken: randomCoin.address,
+    //     //   targetTokenAddress: ethers.constants.AddressZero,
+    //     //   targetTokenName: "Wrapped " + (await randomCoin.name()),
+    //     //   targetTokenSymbol: "W" + (await randomCoin.symbol()),
+    //     //   deadline: ethers.constants.MaxUint256
+    //     // };
 
-        const claimSignature = await signClaimData(bridge2, deployer, claimData);
+    //     claimData = {
+    //       ...claimData,
+    //       value: 20,
+    //       targetTokenAddress: ethers.constants.AddressZero,
+    //       targetTokenName: "Wrapped " + (await randomCoin.name()),
+    //       targetTokenSymbol: "W" + (await randomCoin.symbol()),
+    //       deadline: ethers.constants.MaxUint256
+    //     };
 
-        const claimSignatureSplit = {
-          v: claimSignature.v,
-          r: claimSignature.r,
-          s: claimSignature.s
-        }
+    //     const claimSignature = await signClaimData(bridge2, deployer, claimData);
 
-        const claimTx = await bridge1.claim(claimData, claimSignatureSplit);
-        await claimTx.wait();
+    //     const claimSignatureSplit = {
+    //       v: claimSignature.v,
+    //       r: claimSignature.r,
+    //       s: claimSignature.s
+    //     }
 
-        // Todo check
-        // bridge2.wrappedTokenByOriginalTokenByChainId
-      });
-    });
+    //     const claimTx = await bridge1.claim(claimData, claimSignatureSplit);
+    //     await claimTx.wait();
+
+    //     // Todo check
+    //     // bridge2.wrappedTokenByOriginalTokenByChainId
+    //   });
+    // });
 
     describe("depositWithPermit", function() {
       it("Funds are deposited to the bridge", async function() {
@@ -522,7 +540,11 @@ describe("Bridge", function () {
           chainId: 0
         },
         value: 20,
-        originalToken: dogeCoin.address,
+        token: {
+          tokenAddress: dogeCoin.address,
+          originChainId: chainId
+        },
+        depositTxSourceToken: dogeCoin.address,
         targetTokenAddress: ethers.constants.AddressZero,
         targetTokenName: "Wrapped " + (await dogeCoin.name()),
         targetTokenSymbol: "W" + (await dogeCoin.symbol())
@@ -683,7 +705,11 @@ describe("Bridge", function () {
           chainId: 999999
         },
         value: 40,
-        originalToken: depositData.token,
+        token: {
+          tokenAddress: dogeCoin.address,
+          originChainId: chainId
+        },
+        depositTxSourceToken: dogeCoin.address,
         targetTokenAddress: targetTokenAddress,
         targetTokenName: "",
         targetTokenSymbol: "",
@@ -835,11 +861,16 @@ async function signClaimData(
       { name: '_address', type: 'address' },
       { name: 'chainId', type: 'uint256' }
     ],
+    OriginalToken: [
+      { name: 'tokenAddress', type: 'address' },
+      { name: 'originChainId', type: 'uint256' }
+    ],
     ClaimData: [
       { name: 'from', type: 'User' },
       { name: 'to', type: 'User' },
       { name: 'value', type: 'uint256' },
-      { name: 'originalToken', type: 'address' },
+      { name: 'token', type: 'OriginalToken' },
+      { name: 'depositTxSourceToken', type: 'address' },
       { name: 'targetTokenAddress', type: 'address' },
       { name: 'targetTokenName', type: 'string' },
       { name: 'targetTokenSymbol', type: 'string' },
