@@ -15,7 +15,7 @@ import { getContractAbi } from "../utils";
 
 describe("Bridge", function () {
   // Bridges
-  let bridge1: Bridge, bridge2: Bridge;
+  let bridge1: Bridge, bridge2: Bridge, bridge3: Bridge;
   // Coins
   let dogeCoin: PermitERC20, randomCoin: PermitERC20, wrappedDogeCoinToken: Contract;
   // Signers
@@ -38,6 +38,9 @@ describe("Bridge", function () {
 
     bridge2 = await bridgeFactory.deploy("Bridge2");
     await bridge2.deployed();
+
+    bridge3 = await bridgeFactory.deploy("Bridge3");
+    await bridge3.deployed();
 
     // Accounts
     const accounts = await ethers.getSigners();
@@ -77,9 +80,11 @@ describe("Bridge", function () {
     it("Contract should be paused after deployment", async function() {
       const bridge1IsPaused = await bridge1.paused();
       const bridge2IsPaused = await bridge2.paused();
+      const bridge3IsPaused = await bridge3.paused();
 
       expect(bridge1IsPaused).to.be.equal(true, "Bridge1 is not paused");
       expect(bridge2IsPaused).to.be.equal(true, "Bridge2 is not paused");
+      expect(bridge3IsPaused).to.be.equal(true, "Bridge3 is not paused");
     });
 
     it("Contract should unpause", async function() {
@@ -89,11 +94,16 @@ describe("Bridge", function () {
       const bridge2Tx = await bridge2.unpause();
       await bridge2Tx.wait();
 
+      const bridge3Tx = await bridge3.unpause();
+      await bridge3Tx.wait();
+
       const bridge1IsPaused = await bridge1.paused();
       const bridge2IsPaused = await bridge2.paused();
+      const bridge3IsPaused = await bridge3.paused();
 
       expect(bridge1IsPaused).to.be.equal(false, "Bridge1 is paused");
       expect(bridge2IsPaused).to.be.equal(false, "Bridge2 is paused");
+      expect(bridge3IsPaused).to.be.equal(false, "Bridge3 is paused");
     });
 
     it("Contract should pause", async function() {
@@ -296,54 +306,204 @@ describe("Bridge", function () {
       });
     });
 
-    // Todo
-    // describe("Send WERC20 from Bridge 2 to Bridge 3, then to Bridge 1 and release original ERC20 (3 way Bridge)", function() {
-    //   it("Claim WERC20 on Bridge 2 (mint)", async function() {
-    //     // claimData = {
-    //     //   from: {
-    //     //     _address: userAccount1.address,
-    //     //     chainId: chainId
-    //     //   },
-    //     //   to: {
-    //     //     _address: userAccount1.address,
-    //     //     chainId: chainId
-    //     //   },
-    //     //   value: 20,
-    //     //   token: {
-    //     //     tokenAddress: randomCoin.address,
-    //     //     originChainId: chainId
-    //     //   },
-    //     //   depositTxSourceToken: randomCoin.address,
-    //     //   targetTokenAddress: ethers.constants.AddressZero,
-    //     //   targetTokenName: "Wrapped " + (await randomCoin.name()),
-    //     //   targetTokenSymbol: "W" + (await randomCoin.symbol()),
-    //     //   deadline: ethers.constants.MaxUint256
-    //     // };
+    describe("Send WERC20 from Bridge 2 to Bridge 3, then to Bridge 1 and release original ERC20 (3 way Bridge)", function() {
+      it("Claim WERC20 on Bridge 2 (mint)", async function() {
+        claimData = {
+          from: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          to: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          value: 40,
+          token: {
+            tokenAddress: randomCoin.address,
+            originChainId: chainId
+          },
+          depositTxSourceToken: randomCoin.address,
+          targetTokenAddress: ethers.constants.AddressZero,
+          targetTokenName: "Wrapped " + (await randomCoin.name()),
+          targetTokenSymbol: "W" + (await randomCoin.symbol()),
+          deadline: ethers.constants.MaxUint256
+        };
 
-    //     claimData = {
-    //       ...claimData,
-    //       value: 20,
-    //       targetTokenAddress: ethers.constants.AddressZero,
-    //       targetTokenName: "Wrapped " + (await randomCoin.name()),
-    //       targetTokenSymbol: "W" + (await randomCoin.symbol()),
-    //       deadline: ethers.constants.MaxUint256
-    //     };
+        const claimSignature = await signClaimData(bridge2, deployer, claimData);
 
-    //     const claimSignature = await signClaimData(bridge2, deployer, claimData);
+        const claimSignatureSplit = {
+          v: claimSignature.v,
+          r: claimSignature.r,
+          s: claimSignature.s
+        }
 
-    //     const claimSignatureSplit = {
-    //       v: claimSignature.v,
-    //       r: claimSignature.r,
-    //       s: claimSignature.s
-    //     }
+        const claimTx = await bridge2.claim(claimData, claimSignatureSplit);
+        await claimTx.wait();
 
-    //     const claimTx = await bridge1.claim(claimData, claimSignatureSplit);
-    //     await claimTx.wait();
+        const wrappedRandomCoinBridge2Address = await bridge2.wrappedTokenByOriginalTokenByChainId(chainId, randomCoin.address);
+        const wrappedRandomCoinBridge2: Contract = new ethers.Contract(wrappedRandomCoinBridge2Address, wrappedTokenAbi, userAccount1);
 
-    //     // Todo check
-    //     // bridge2.wrappedTokenByOriginalTokenByChainId
-    //   });
-    // });
+        expect(
+          (await wrappedRandomCoinBridge2.balanceOf(userAccount1.address)).toString()
+        ).to.be.equal("40", "WrappedRandomCoin wasn't claimed correctly");
+      });
+
+      it("Deposit WERC20 on Bridge 2 in Bridge 3 direction", async function() {
+        const deadline = (await time.latest()) + 60 * 60;
+
+        const wrappedRandomCoinBridge2Address = await bridge2.wrappedTokenByOriginalTokenByChainId(chainId, randomCoin.address);
+        const wrappedRandomCoinBridge2: Contract = new ethers.Contract(wrappedRandomCoinBridge2Address, wrappedTokenAbi, userAccount1);
+
+        const approveSignature = await permit(
+          wrappedRandomCoinBridge2,
+          userAccount1,
+          userAccount1.address,
+          bridge2.address,
+          40,
+          deadline
+        );
+
+        depositData = {
+          from: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          to: {
+            _address: bridge2.address,
+            chainId: chainId
+          },
+          spender: bridge2.address,
+          token: wrappedRandomCoinBridge2.address,
+          value: 40,
+          deadline: deadline,
+          approveTokenTransferSig: {
+            v: approveSignature.v,
+            r: approveSignature.r,
+            s: approveSignature.s
+          }
+        };
+
+        const initialTotalSupply: BigNumber = await wrappedRandomCoinBridge2.totalSupply();
+
+        const depositTx = await bridge2.connect(userAccount1).depositWithPermit(depositData);
+        await depositTx.wait();
+
+        const totalSupplyAfterTx: BigNumber = await wrappedRandomCoinBridge2.totalSupply();
+
+        expect(
+          await wrappedRandomCoinBridge2.balanceOf(bridge2.address)
+        ).to.be.equal(0, "The bridge have locked Wrapped tokens instead of burning them");
+        expect(
+          await wrappedRandomCoinBridge2.balanceOf(userAccount1.address)
+        ).to.be.equal(0, "The bridge have locked Wrapped tokens instead of burning them");
+        expect(totalSupplyAfterTx).to.be.equal(
+          initialTotalSupply.sub(40),
+          "WrappedDogeCoin totalSupply is incorrect"
+        );
+      });
+
+      it("Claim WERC20 on Bridge 3", async function() {
+        const wrappedRandomCoinBridge2Address = await bridge2.wrappedTokenByOriginalTokenByChainId(chainId, randomCoin.address);
+        const wrappedRandomCoinBridge2: Contract = new ethers.Contract(wrappedRandomCoinBridge2Address, wrappedTokenAbi, userAccount1);
+
+        claimData = {
+          ...claimData,
+          depositTxSourceToken: wrappedRandomCoinBridge2.address,
+        };
+
+        const claimSignature = await signClaimData(bridge3, deployer, claimData);
+
+        const claimSignatureSplit = {
+          v: claimSignature.v,
+          r: claimSignature.r,
+          s: claimSignature.s
+        }
+
+        const claimTx = await bridge3.claim(claimData, claimSignatureSplit);
+        await claimTx.wait();
+
+        const wrappedRandomCoinBridge3Address = await bridge3.wrappedTokenByOriginalTokenByChainId(chainId, randomCoin.address);
+        const wrappedRandomCoinBridge3: Contract = new ethers.Contract(wrappedRandomCoinBridge3Address, wrappedTokenAbi, userAccount1);
+
+        expect(
+          (await wrappedRandomCoinBridge3.balanceOf(userAccount1.address)).toString()
+        ).to.be.equal("40", "WrappedRandomCoin wasn't claimed correctly");
+      });
+
+      it("Deposit WERC20 on Bridge 3 in Bridge 1 direction", async function() {
+        const deadline = (await time.latest()) + 60 * 60;
+
+        const wrappedRandomCoinBridge3Address = await bridge3.wrappedTokenByOriginalTokenByChainId(chainId, randomCoin.address);
+        const wrappedRandomCoinBridge3: Contract = new ethers.Contract(wrappedRandomCoinBridge3Address, wrappedTokenAbi, userAccount1);
+
+        const approveSignature = await permit(
+          wrappedRandomCoinBridge3,
+          userAccount1,
+          userAccount1.address,
+          bridge3.address,
+          40,
+          deadline
+        );
+
+        depositData = {
+          from: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          to: {
+            _address: bridge3.address,
+            chainId: chainId
+          },
+          spender: bridge3.address,
+          token: wrappedRandomCoinBridge3.address,
+          value: 40,
+          deadline: deadline,
+          approveTokenTransferSig: {
+            v: approveSignature.v,
+            r: approveSignature.r,
+            s: approveSignature.s
+          }
+        };
+
+        const initialTotalSupply: BigNumber = await wrappedRandomCoinBridge3.totalSupply();
+
+        const depositTx = await bridge3.connect(userAccount1).depositWithPermit(depositData);
+        await depositTx.wait();
+
+        const totalSupplyAfterTx: BigNumber = await wrappedRandomCoinBridge3.totalSupply();
+
+        expect(
+          await wrappedRandomCoinBridge3.balanceOf(bridge3.address)
+        ).to.be.equal(0, "The bridge have locked Wrapped tokens instead of burning them");
+        expect(
+          await wrappedRandomCoinBridge3.balanceOf(userAccount1.address)
+        ).to.be.equal(0, "The bridge have locked Wrapped tokens instead of burning them");
+        expect(totalSupplyAfterTx).to.be.equal(
+          initialTotalSupply.sub(40),
+          "WrappedDogeCoin totalSupply is incorrect"
+        );
+      });
+
+      it("Claim WERC20 on Bridge 3", async function() {
+        const claimSignature = await signClaimData(bridge3, deployer, claimData);
+
+        const claimSignatureSplit = {
+          v: claimSignature.v,
+          r: claimSignature.r,
+          s: claimSignature.s
+        }
+
+        const claimTx = await bridge3.claim(claimData, claimSignatureSplit);
+        await claimTx.wait();
+
+        const wrappedRandomCoinBridge3Address = await bridge3.wrappedTokenByOriginalTokenByChainId(chainId, randomCoin.address);
+        const wrappedRandomCoinBridge3: Contract = new ethers.Contract(wrappedRandomCoinBridge3Address, wrappedTokenAbi, userAccount1);
+
+        expect(
+          (await wrappedRandomCoinBridge3.balanceOf(userAccount1.address)).toString()
+        ).to.be.equal("40", "WrappedRandomCoin wasn't claimed correctly");
+      });
+    });
 
     describe("depositWithPermit", function() {
       it("Funds are deposited to the bridge", async function() {
@@ -366,7 +526,15 @@ describe("Bridge", function () {
         );
 
         depositData = {
-          ...depositData,
+          from: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          to: {
+            _address: userAccount1.address,
+            chainId: chainId
+          },
+          spender: bridge1.address,
           token: dogeCoin.address,
           value: value,
           deadline: deadline,

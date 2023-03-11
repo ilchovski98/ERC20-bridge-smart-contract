@@ -37,6 +37,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
   error AddressIsNotTheOwner();
   error TransferFromIsUnsuccessful();
   error TransferIsUnsuccessful();
+  error FromAndSenderMustMatch();
 
   modifier validateTransfer(address from, address to, address originalToken, uint256 value) {
     if (from == address(0)) revert InvalidAddress();
@@ -189,6 +190,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
   }
 
   function _deposit(DepositData calldata _depositData) internal {
+    if (msg.sender != _depositData.from._address) revert FromAndSenderMustMatch();
     IERC20 originalToken = IERC20(_depositData.token);
     bool success = originalToken.transferFrom(msg.sender, _depositData.spender, _depositData.value);
     if (!success) revert TransferFromIsUnsuccessful();
