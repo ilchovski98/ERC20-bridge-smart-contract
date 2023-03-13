@@ -15,6 +15,8 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
   mapping(address => OriginalToken) public originalTokenByWrappedToken; // wrapped token => original token
   mapping(address => uint256) private nonces;
 
+  address[] public wrappedTokens;
+
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
   // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline)OriginalToken(address tokenAddress,uint256 originChainId)User(address _address,uint256 chainId)");
@@ -67,6 +69,10 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
 
   function nonce(address _owner) external view returns (uint256) {
     return nonces[_owner];
+  }
+
+  function getNumberOfWrappedTokens() external view returns (uint256) {
+    return wrappedTokens.length;
   }
 
   function pause() external onlyOwner {
@@ -214,12 +220,14 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     if (_claimData.targetTokenAddress == address(0)) {
       if (wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] == address(0)) {
         PermitERC20 newWrappedToken = new PermitERC20(_claimData.targetTokenName, _claimData.targetTokenSymbol);
+        address newWrappedTokenAddress = address(newWrappedToken);
 
-        wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] = address(newWrappedToken);
-        originalTokenByWrappedToken[address(newWrappedToken)] = OriginalToken(
+        wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress] = newWrappedTokenAddress;
+        originalTokenByWrappedToken[newWrappedTokenAddress] = OriginalToken(
           _claimData.token.tokenAddress,
           _claimData.token.originChainId
         );
+        wrappedTokens.push(newWrappedTokenAddress);
       }
 
       address wrappedToken = wrappedTokenByOriginalTokenByChainId[_claimData.token.originChainId][_claimData.token.tokenAddress];
