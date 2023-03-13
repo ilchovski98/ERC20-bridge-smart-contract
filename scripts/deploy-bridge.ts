@@ -5,7 +5,7 @@ import { Bridge__factory } from "./../typechain-types";
 
 export async function deployBridge(bridgeName: string) {
   try {
-    const bridgeFactory: Bridge__factory = await ethers.getContractFactory("Bridge");
+    const bridgeFactory: Bridge__factory = await ethers.getContractFactory('Bridge');
     const bridgeContract = await bridgeFactory.deploy(bridgeName);
     const bridgeDeployTx = await bridgeContract.deployed();
     console.log(`Bridge deployed on ${hre.network.name} to: ${bridgeContract.address}`);

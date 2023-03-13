@@ -205,7 +205,8 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     bool isWrappedToken = originalTokenData.tokenAddress != address(0);
 
     if (isWrappedToken) {
-      if (block.chainid == _depositData.to.chainId) revert DestinationChainCantBeCurrentChain();
+      // deployed with the check
+      // if (block.chainid == _depositData.to.chainId) revert DestinationChainCantBeCurrentChain();
       PermitERC20(_depositData.token).burn(_depositData.value);
       emitBurnWrappedToken(_depositData, originalTokenData.tokenAddress, originalTokenData.originChainId);
     } else {
