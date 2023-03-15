@@ -12,6 +12,12 @@ interface IBridge {
     uint256 chainId;
   }
 
+  struct SourceTxData {
+    bytes32 transactionHash;
+    bytes32 blockHash;
+    uint256 logIndex;
+  }
+
   struct DepositData {
     User from;
     User to;
@@ -32,6 +38,7 @@ interface IBridge {
     string targetTokenName; // provided by operator to name new wrapped token
     string targetTokenSymbol; // provided by operator to name new wrapped token
     uint256 deadline; // provided by operator in case we want to have a deadline (most of the times there will be none)
+    SourceTxData sourceTxData;
   }
 
   struct Signature {
@@ -52,33 +59,39 @@ interface IBridge {
   event BurnWrappedToken(
     address burnedWrappedTokenAddress,
     uint256 value,
-    address sender,
-    address recepient,
+    address indexed sender,
+    address indexed recepient,
     uint256 sourceChainId,
     uint256 toChainId,
-    address originalTokenAddress,
+    address indexed originalTokenAddress,
     uint256 originalTokenChainId
   );
 
   event ReleaseOriginalToken(
-    address releasedTokenAddress,
+    address indexed releasedTokenAddress,
     uint256 value,
     address sender,
-    address recepient,
+    address indexed recepient,
     uint256 sourceChainId,
     uint256 toChainId,
-    address sourceWrappedTokenAddress
+    address sourceWrappedTokenAddress,
+    bytes32 indexed transactionHash,
+    bytes32 blockHash,
+    uint256 logIndex
   );
 
   event MintWrappedToken(
     address mintedTokenAddress,
     uint256 value,
     address sender,
-    address recepient,
+    address indexed recepient,
     uint256 sourceChainId,
     uint256 toChainId,
-    address originalTokenAddress,
-    uint256 originalChainId
+    address indexed originalTokenAddress,
+    uint256 originalChainId,
+    bytes32 indexed transactionHash,
+    bytes32 blockHash,
+    uint256 logIndex
   );
 
   function deposit(DepositData calldata _depositData) external;
