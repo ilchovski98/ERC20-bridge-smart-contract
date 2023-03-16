@@ -20,18 +20,16 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
 
   // EIP712
   bytes32 public DOMAIN_SEPARATOR;
-  // keccak256("Claim(ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline,SourceTxData sourceTxData)SourceTxData(bytes32 transactionHash,bytes32 blockHash,uint256 logIndex)OriginalToken(address tokenAddress,uint256 originChainId)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIM_TYPEHASH = keccak256("Claim(ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline,SourceTxData sourceTxData)SourceTxData(bytes32 transactionHash,bytes32 blockHash,uint256 logIndex)OriginalToken(address tokenAddress,uint256 originChainId)User(address _address,uint256 chainId)");
-  // keccak256("ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline,SourceTxData sourceTxData)SourceTxData(bytes32 transactionHash,bytes32 blockHash,uint256 logIndex)OriginalToken(address tokenAddress,uint256 originChainId)User(address _address,uint256 chainId)");
-  bytes32 public constant CLAIMDATA_TYPEHASH = keccak256("ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline,SourceTxData sourceTxData)SourceTxData(bytes32 transactionHash,bytes32 blockHash,uint256 logIndex)OriginalToken(address tokenAddress,uint256 originChainId)User(address _address,uint256 chainId)");
-  // keccak256("User(address _address,uint256 chainId)")
+  // keccak256("Claim(ClaimData _claimData,uint256 nonce)ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline,SourceTxData sourceTxData)OriginalToken(address tokenAddress,uint256 originChainId)SourceTxData(bytes32 transactionHash,bytes32 blockHash,uint256 logIndex)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIM_TYPEHASH = 0x41bf1b4d5cbfc2a05c9782673bb5f5a23e08a0db24ab22f7c866061264bc1b46;
+  // keccak256("ClaimData(User from,User to,uint256 value,OriginalToken token,address depositTxSourceToken,address targetTokenAddress,string targetTokenName,string targetTokenSymbol,uint256 deadline,SourceTxData sourceTxData)OriginalToken(address tokenAddress,uint256 originChainId)SourceTxData(bytes32 transactionHash,bytes32 blockHash,uint256 logIndex)User(address _address,uint256 chainId)");
+  bytes32 public constant CLAIMDATA_TYPEHASH = 0x5f23425bc5e9b2af73df7fcf795646c5a25e4dbaa56cf0bf4a0ff6037ea50a68;
+  // keccak256("User(address _address,uint256 chainId)");
   bytes32 public constant USER_TYPEHASH = 0x265b4089f698d180c71c21e5c5a755d17cec5ca245cab57cf1f26696020008b6;
-  // keccak256("SourceTxData(bytes32 transactionHash,bytes32 blockHash,uint256 logIndex)")
+  // keccak256("SourceTxData(bytes32 transactionHash,bytes32 blockHash,uint256 logIndex)");
   bytes32 public constant SOURCE_TX_DATA_TYPEHASH = 0x4cd5b84e84b8fa61fabcda6f7ac943dd7f8f6ff0558df9278a6e0af16964fad2;
   // keccak256("OriginalToken(address tokenAddress,uint256 originChainId)");
   bytes32 public constant ORIGINAL_TOKEN_TYPEHASH = 0xa24126880bed04190203d04ec4d6365915e96e5977ee3b881ec3cfafa2b71c49;
-  // keccak256("Signature(uint8 v,bytes32 r,bytes32 s)")
-  bytes32 public constant SIGNATURE_TYPEHASH = 0xcea59b5eccb60256d918b7a2e778f6161148c37e6dada57c32e20db10c50b631;
 
   error InvalidAddress();
   error InvalidChainId();
@@ -223,7 +221,7 @@ contract Bridge is Ownable, Pausable, ReentrancyGuard, IBridge {
     bool isWrappedToken = originalTokenData.tokenAddress != address(0);
 
     if (isWrappedToken) {
-      // deployed with the check
+      // deployed with the check (with it tests do not pass because the bridges are tested on one chain only)
       // if (block.chainid == _depositData.to.chainId) revert DestinationChainCantBeCurrentChain();
       PermitERC20(_depositData.token).burn(_depositData.value);
       emitBurnWrappedToken(_depositData, originalTokenData.tokenAddress, originalTokenData.originChainId);
