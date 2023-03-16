@@ -2,8 +2,8 @@
 
 ## Sepolia
 Bridge contract:
- - address: 0x226326cAd9945F8bf6e7D3de454dFB0ecb4DE9dE
- - verify link: https://sepolia.etherscan.io/address/0x226326cAd9945F8bf6e7D3de454dFB0ecb4DE9dE#code
+ - address: 0xF55D12e0fe91c157c3D389F134a46b2182D2F6Da
+ - verify link: https://sepolia.etherscan.io/address/0xF55D12e0fe91c157c3D389F134a46b2182D2F6Da#code
 
 Random Coin (permitERC20):
  - address: 0x9a7F208A777ed19233380959c4028c99886c5843
@@ -19,8 +19,8 @@ Cat Coin (permitERC20):
 
 ## Goerli
 Bridge contract:
- - address: 0x70670B2F7bc421F2fB03d8c990d2a8bFa7D188fd
- - verify link: https://goerli.etherscan.io/address/0x70670B2F7bc421F2fB03d8c990d2a8bFa7D188fd#code
+ - address: 0xc551F21DE4cd2C55Ea1B8B9eb8b541aaBE9766EF
+ - verify link: https://goerli.etherscan.io/address/0xc551F21DE4cd2C55Ea1B8B9eb8b541aaBE9766EF#code
 
 Dino Coin (permitERC20):
  - address: 0xBdb3eB1022F8Fa2d873aA0089C05a7A1b5004349
@@ -32,5 +32,10 @@ Bird Coin (permitERC20):
 
 ## Mumbai
 Bridge contract:
- - address:
- - verify link:
+ - address: 0xe7cDb89b500B953348C1172C3828E611665263e9
+ - https://mumbai.polygonscan.com/address/0xe7cDb89b500B953348C1172C3828E611665263e9
+ - verify link: Couldn't verify the contract (Error: NomicLabsHardhatPluginError: Invalid API Key) - Seems that there is an issue on Etherscan's end https://github.com/smartcontractkit/full-blockchain-solidity-course-js/discussions/1214
+
+Iron Man Coin (permitERC20):
+ - address: 0xf878d95eC5b648D845bDA52984D56962965dEF98
+ - https://mumbai.polygonscan.com/address/0xf878d95eC5b648D845bDA52984D56962965dEF98
