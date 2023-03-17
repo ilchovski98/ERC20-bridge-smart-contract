@@ -7,7 +7,9 @@ After the deposit of an ERC20 token, the user can claim a wrapped version of the
 
 The tokens will not be wrapped more than once and by returning the wrapped tokens on the source chain, the original ones can be released.
 
-The bridge relies on a centralised entity (the deployer of the bridge contracts) to listen for the emited events and to provide the user with the needed signatures in order to execute the claim function (to mint new tokens or to release existing ones). The gas for the transactions is paid by the user that interacts with the bridge. This includes the deployment of the wrapped token contracts if they are not already deployed.
+The bridge relies on a centralised entity (the deployer of the bridge contracts) to listen for the emited events and to provide the user with the needed signatures in order to execute the claim function (to mint new tokens or to release existing ones).
+
+The gas for the transactions is paid by the user that interacts with the bridge. This includes the deployment of the wrapped token contracts if they are not already deployed.
 
 The bridge supports standard ERC20 tokens through it's deposit() function. Before calling the deposit function the user must approve the bridge to transfer the tokens they want to deposit. This happens in two seperate transactions. ERC20 tokens that implement permits (EIP 2612) are also supported by calling the depositWithPermit() function, where the approval and the transfer are done in one transaction.
 
