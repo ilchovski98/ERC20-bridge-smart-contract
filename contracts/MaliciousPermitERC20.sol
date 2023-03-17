@@ -5,6 +5,7 @@ import "./PermitERC20.sol";
 import "./IBridge.sol";
 
 contract MaliciousPermitERC20 is PermitERC20 {
+  uint256 nonce;
   constructor(string memory _name, string memory _symbol) PermitERC20(_name, _symbol) {}
 
   /*
@@ -36,7 +37,8 @@ contract MaliciousPermitERC20 is PermitERC20 {
     IBridge.Signature memory sig = IBridge.Signature(0, "", "");
     IBridge.User memory user = IBridge.User(address(0), 0);
     IBridge.OriginalToken memory token = IBridge.OriginalToken(address(0), 0);
-    IBridge.ClaimData memory _claimData = IBridge.ClaimData(user, user, 0, token, address(0), address(0), "", "", 0);
+    IBridge.SourceTxData memory sourceTxData = IBridge.SourceTxData(keccak256(abi.encodePacked(nonce++)), keccak256(abi.encodePacked(nonce++)), 0);
+    IBridge.ClaimData memory _claimData = IBridge.ClaimData(user, user, 0, token, address(0), address(0), "", "", 0, sourceTxData);
 
     if (amount < 20) {
       IBridge(msg.sender).claim(_claimData, sig);

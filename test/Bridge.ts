@@ -1,6 +1,6 @@
 import hre, { ethers } from "hardhat";
 import { expect } from "chai";
-import { BigNumber, Contract, ContractInterface } from "ethers";
+import { BigNumber, Contract, ContractInterface, ContractReceipt } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
@@ -28,6 +28,9 @@ describe("Bridge", function () {
   let depositData: IBridge.DepositDataStruct, claimData: IBridge.ClaimDataStruct, firstClaimSignatureSplit: IBridge.SignatureStruct;
   // addresses
   let firstWrappedDogeCoinTokenAddress: string;
+  // Last TransactionData
+  const depositReceipts: any = [];
+  let dummyLogIndex: number = 0;
 
   const chainId = ethers.BigNumber.from(hre.network.config.chainId);
 
@@ -200,7 +203,12 @@ describe("Bridge", function () {
         targetTokenAddress: ethers.constants.AddressZero,
         targetTokenName: "Wrapped " + (await randomCoin.name()),
         targetTokenSymbol: "W" + (await randomCoin.symbol()),
-        deadline: ethers.constants.MaxUint256
+        deadline: ethers.constants.MaxUint256,
+        sourceTxData: {
+          transactionHash: ethers.constants.HashZero,
+          blockHash: ethers.constants.HashZero,
+          logIndex: dummyLogIndex++
+        }
       };
 
       const claimSignature = await signClaimData(bridge1, deployer, claimData);
@@ -419,7 +427,7 @@ describe("Bridge", function () {
         ).to.be.revertedWith("ERC20: insufficient allowance");
       });
 
-      it("Funds are deposited to the bridge", async function() {
+      it("Funds are deposited to the bridge - RandomCoin", async function() {
         expect(
           await randomCoin.balanceOf(userAccount1.address)
         ).to.be.equal(100, "Initial token balance of userAccount1 is incorect");
@@ -433,7 +441,8 @@ describe("Bridge", function () {
         await approveTx.wait();
 
         const depositTx = await bridge1.connect(userAccount1).deposit(depositData);
-        await depositTx.wait();
+        const receipt = await depositTx.wait();
+        depositReceipts.push({ transactionHash: receipt.transactionHash, blockHash: receipt.blockHash, logIndex: dummyLogIndex++}); // 1
 
         expect(
           await randomCoin.balanceOf(userAccount1.address)
@@ -445,7 +454,7 @@ describe("Bridge", function () {
     });
 
     describe("depositWithPermit", function() {
-      it("Funds are deposited to the bridge", async function() {
+      it("Funds are deposited to the bridge - DogeCoin", async function() {
         expect(
           await dogeCoin.balanceOf(userAccount1.address)
         ).to.be.equal(100, "Initial token balance of userAccount1 is incorect");
@@ -485,7 +494,8 @@ describe("Bridge", function () {
         };
 
         const depositTx = await bridge1.connect(userAccount1).depositWithPermit(depositData);
-        await depositTx.wait();
+        const receipt = await depositTx.wait();
+        depositReceipts.push({ transactionHash: receipt.transactionHash, blockHash: receipt.blockHash, logIndex: dummyLogIndex++}); // 2
 
         expect(
           await dogeCoin.balanceOf(userAccount1.address)
@@ -670,12 +680,17 @@ describe("Bridge", function () {
       ).to.be.revertedWithCustomError(bridge2, "InvalidChainId");
     });
 
-    it("Deploy WrappedToken and mint tokens to the recepient", async function() {
+    it("Deploy WrappedToken and mint tokens to the recepient - DogeCoin", async function() {
       claimData = {
         ...claimData,
         from: {
           _address: userAccount1.address,
           chainId: chainId
+        },
+        sourceTxData: {
+          transactionHash: depositReceipts[1].transactionHash,
+          blockHash: depositReceipts[1].blockHash,
+          logIndex: depositReceipts[1].logIndex
         }
       };
 
@@ -706,6 +721,32 @@ describe("Bridge", function () {
       ).to.be.equal("20", "Wrapped token balance of userAccount1 is incorrect");
     });
 
+    it("TransactionDataHash is stored correctly", async function () {
+      const transactionDataHash = ethers.utils.solidityKeccak256(["bytes32", "bytes32", "uint256"], [depositReceipts[1].transactionHash, depositReceipts[1].blockHash, depositReceipts[1].logIndex]);
+      expect(
+        await bridge2.isClaimed(transactionDataHash)
+      ).to.be.equal(true, "TransactionDataHash is not stored correctly");
+    });
+
+    it("Should revert when trying to claim with the same transactionData", async function() {
+      const claimSignature = await signClaimData(bridge2, deployer, claimData);
+
+      const claimSignatureSplit = {
+        v: claimSignature.v,
+        r: claimSignature.r,
+        s: claimSignature.s
+      }
+      await expect(
+        bridge2.claim(claimData, claimSignatureSplit)
+      ).to.be.revertedWithCustomError(bridge2, "AlreadyClaimed");
+    });
+
+    it("Number of deployed WERC20 from a bridge are stored correctly", async function() {
+      expect(
+        await bridge2.getNumberOfWrappedTokens()
+      ).to.be.equal(1, "Number of WERC20 are not stored correctly");
+    });
+
     it("Should revert when trying to use the signature twice", async function() {
       await expect(
         bridge2.claim(claimData, firstClaimSignatureSplit)
@@ -713,6 +754,14 @@ describe("Bridge", function () {
     });
 
     it("Should not deploy new WrappedToken and mint from the old one", async function() {
+      claimData = {
+        ...claimData,
+        sourceTxData: {
+          transactionHash: depositReceipts[1].transactionHash,
+          blockHash: depositReceipts[1].blockHash,
+          logIndex: depositReceipts[1].logIndex + 10000 // Random one in order to pass the test
+        }
+      }
       const claimSignature = await signClaimData(bridge2, deployer, claimData);
       const claimSignatureSplit = {
         v: claimSignature.v,
@@ -744,7 +793,7 @@ describe("Bridge", function () {
   });
 
   describe("Deposit WERC20 to Bridge 2 (Burn)", function() {
-    it("Burn the deployed token instead of holding them", async function() {
+    it("Burn the deployed token instead of holding them - DogeCoin", async function() {
       expect(
         await wrappedDogeCoinToken.balanceOf(userAccount1.address)
       ).to.be.equal(40, "Initial WrappedDogeCoin token balance of userAccount1 is incorect");
@@ -782,7 +831,8 @@ describe("Bridge", function () {
       const initialTotalSupply: BigNumber = await wrappedDogeCoinToken.totalSupply();
 
       const depositTx = await bridge2.connect(userAccount1).depositWithPermit(depositData);
-      await depositTx.wait();
+      const receipt = await depositTx.wait();
+      depositReceipts.push({ transactionHash: receipt.transactionHash, blockHash: receipt.blockHash, logIndex: dummyLogIndex++}); // 3
 
       const totalSupplyAfterTx: BigNumber = await wrappedDogeCoinToken.totalSupply();
 
@@ -822,7 +872,12 @@ describe("Bridge", function () {
         targetTokenAddress: targetTokenAddress,
         targetTokenName: "",
         targetTokenSymbol: "",
-        deadline: deadline
+        deadline: deadline,
+        sourceTxData: {
+          transactionHash: depositReceipts[2].transactionHash,
+          blockHash: depositReceipts[2].blockHash,
+          logIndex: depositReceipts[2].logIndex
+        }
       };
 
       const claimSignature = await signClaimData(bridge1, deployer, claimData);
@@ -888,7 +943,7 @@ describe("Bridge", function () {
       ).to.be.revertedWithCustomError(bridge1, "InvalidAddress");
     });
 
-    it("Release original ERC20 token", async function() {
+    it("Release original ERC20 token - DogeCoin", async function() {
       const claimSignature = await signClaimData(bridge1, deployer, claimData);
 
       expect(dogeCoin.address).to.be.equal(
@@ -914,7 +969,7 @@ describe("Bridge", function () {
   });
 
   describe("Send WERC20 from Bridge 2 to Bridge 3, then to Bridge 1 and release original ERC20 (3 way Bridge)", function() {
-    it("Claim WERC20 on Bridge 2 (mint)", async function() {
+    it("Claim WERC20 on Bridge 2 (mint) - RandomCoin", async function() {
       claimData = {
         from: {
           _address: userAccount1.address,
@@ -933,7 +988,12 @@ describe("Bridge", function () {
         targetTokenAddress: ethers.constants.AddressZero,
         targetTokenName: "Wrapped " + (await randomCoin.name()),
         targetTokenSymbol: "W" + (await randomCoin.symbol()),
-        deadline: ethers.constants.MaxUint256
+        deadline: ethers.constants.MaxUint256,
+        sourceTxData: {
+          transactionHash: depositReceipts[0].transactionHash,
+          blockHash: depositReceipts[0].blockHash,
+          logIndex: depositReceipts[0].logIndex
+        }
       };
 
       const claimSignature = await signClaimData(bridge2, deployer, claimData);
@@ -955,7 +1015,7 @@ describe("Bridge", function () {
       ).to.be.equal("40", "WrappedRandomCoin wasn't claimed correctly");
     });
 
-    it("Deposit WERC20 on Bridge 2 in Bridge 3 direction", async function() {
+    it("Deposit WERC20 on Bridge 2 in Bridge 3 direction - RandomCoin", async function() {
       const deadline = (await time.latest()) + 60 * 60;
 
       const wrappedRandomCoinBridge2Address = await bridge2.wrappedTokenByOriginalTokenByChainId(chainId, randomCoin.address);
@@ -993,7 +1053,8 @@ describe("Bridge", function () {
       const initialTotalSupply: BigNumber = await wrappedRandomCoinBridge2.totalSupply();
 
       const depositTx = await bridge2.connect(userAccount1).depositWithPermit(depositData);
-      await depositTx.wait();
+      const receipt = await depositTx.wait();
+      depositReceipts.push({ transactionHash: receipt.transactionHash, blockHash: receipt.blockHash, logIndex: dummyLogIndex++}); // 4
 
       const totalSupplyAfterTx: BigNumber = await wrappedRandomCoinBridge2.totalSupply();
 
@@ -1009,13 +1070,18 @@ describe("Bridge", function () {
       );
     });
 
-    it("Claim WERC20 on Bridge 3", async function() {
+    it("Claim WERC20 on Bridge 3 - RandomCoin", async function() {
       const wrappedRandomCoinBridge2Address = await bridge2.wrappedTokenByOriginalTokenByChainId(chainId, randomCoin.address);
       const wrappedRandomCoinBridge2: Contract = new ethers.Contract(wrappedRandomCoinBridge2Address, wrappedTokenAbi, userAccount1);
 
       claimData = {
         ...claimData,
         depositTxSourceToken: wrappedRandomCoinBridge2.address,
+        sourceTxData: {
+          transactionHash: depositReceipts[3].transactionHash,
+          blockHash: depositReceipts[3].blockHash,
+          logIndex: depositReceipts[3].logIndex
+        }
       };
 
       const claimSignature = await signClaimData(bridge3, deployer, claimData);
@@ -1037,7 +1103,7 @@ describe("Bridge", function () {
       ).to.be.equal("40", "WrappedRandomCoin wasn't claimed correctly");
     });
 
-    it("Deposit WERC20 on Bridge 3 in Bridge 1 direction", async function() {
+    it("Deposit WERC20 on Bridge 3 in Bridge 1 direction - RandomCoin", async function() {
       const deadline = (await time.latest()) + 60 * 60;
 
       const wrappedRandomCoinBridge3Address = await bridge3.wrappedTokenByOriginalTokenByChainId(chainId, randomCoin.address);
@@ -1075,7 +1141,8 @@ describe("Bridge", function () {
       const initialTotalSupply: BigNumber = await wrappedRandomCoinBridge3.totalSupply();
 
       const depositTx = await bridge3.connect(userAccount1).depositWithPermit(depositData);
-      await depositTx.wait();
+      const receipt = await depositTx.wait();
+      depositReceipts.push({ transactionHash: receipt.transactionHash, blockHash: receipt.blockHash, logIndex: dummyLogIndex++}); // 5
 
       const totalSupplyAfterTx: BigNumber = await wrappedRandomCoinBridge3.totalSupply();
 
@@ -1091,9 +1158,16 @@ describe("Bridge", function () {
       );
     });
 
-    it("Claim WERC20 on Bridge 3", async function() {
+    it("Claim WERC20 on Bridge 3 - RandomCoin", async function() {
+      claimData = {
+        ...claimData,
+        sourceTxData: {
+          transactionHash: depositReceipts[4].transactionHash,
+          blockHash: depositReceipts[4].blockHash,
+          logIndex: depositReceipts[4].logIndex
+        }
+      }
       const claimSignature = await signClaimData(bridge3, deployer, claimData);
-
       const claimSignatureSplit = {
         v: claimSignature.v,
         r: claimSignature.r,
@@ -1169,6 +1243,11 @@ async function signClaimData(
       { name: '_address', type: 'address' },
       { name: 'chainId', type: 'uint256' }
     ],
+    SourceTxData: [
+      { name: 'transactionHash', type: 'bytes32' },
+      { name: 'blockHash', type: 'bytes32' },
+      { name: 'logIndex', type: 'uint256' }
+    ],
     OriginalToken: [
       { name: 'tokenAddress', type: 'address' },
       { name: 'originChainId', type: 'uint256' }
@@ -1182,7 +1261,8 @@ async function signClaimData(
       { name: 'targetTokenAddress', type: 'address' },
       { name: 'targetTokenName', type: 'string' },
       { name: 'targetTokenSymbol', type: 'string' },
-      { name: 'deadline', type: 'uint256' }
+      { name: 'deadline', type: 'uint256' },
+      { name: 'sourceTxData', type: 'SourceTxData' }
     ],
     Claim: [
       { name: '_claimData', type: 'ClaimData' },
