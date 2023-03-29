@@ -1,5 +1,8 @@
 # Hardhat Bridge Project
 
+Bridge Frontend: https://github.com/ilchovski98/ERC20-bridge-frontend
+Bridge Backend: https://github.com/ilchovski98/ERC20-bridge-backend
+
 ## About the project
 The implementation of the bridge allows for the deployment and interaction on 3+ chains.
 
